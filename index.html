@@ -242,6 +242,18 @@
             background:rgba(0,0,0,0.65); pointer-events:none;
         }
         @media (pointer: coarse) { #minimap { bottom:170px; } }
+        #powerup-hud {
+            position:fixed; bottom:160px; left:50%; transform:translateX(-50%);
+            font-size:17px; font-weight:900; letter-spacing:2px;
+            pointer-events:none; opacity:0; transition:opacity 0.3s; z-index:15;
+            background:rgba(0,0,0,0.65); border-radius:20px; padding:4px 18px;
+            border:1px solid rgba(255,255,255,0.15);
+        }
+        #powerup-hud.show { opacity:1; animation:pulse 0.6s infinite alternate; }
+        #record-badge {
+            font-size:13px; font-weight:900; color:#ffcc00;
+            text-shadow:0 0 8px #ffcc00; letter-spacing:1px; display:none;
+        }
     </style>
 </head>
 <body>
@@ -324,12 +336,14 @@
     <div id="countdown-display">60</div>
     <div id="delivery-display">🍕 <span id="delivery-count">0</span></div>
     <div id="streak-display"></div>
+    <div id="record-badge"></div>
     <div id="mute-btn" onclick="toggleMute()" title="Mute">🔊</div>
 </div>
 <div id="turbo-hud">⚡ TURBO</div>
 <div id="hazard-hud"></div>
 <div id="screen-flash"></div>
 <div id="combo-hud"></div>
+<div id="powerup-hud"></div>
 <canvas id="minimap" width="120" height="120"></canvas>
 
 <!-- THREE.JS -->
@@ -764,6 +778,17 @@ let comboCount = 0;         // entregas seguidas
 let comboTimer = 0;         // segundos desde última entrega
 const COMBO_WINDOW = 20;    // ventana de combo en segundos
 let crashStreak = 0;        // entregas sin chocar con cajas
+// Power-ups
+let carBodyMat = null;      // ref al material de la carrocería para flash
+let activePowerups = [];
+let powerupSpawnTimer = 0;
+let shieldActive = false, shieldTimer = 0;
+let speedBoostActive = false, speedBoostTimer = 0;
+// Tráfico y peatones
+const trafficLights = [];
+const pedestrians = [];
+const TRAFFIC_CYCLE = 7;    // segundos por fase semáforo
+let gameInited = false;     // guard para init one-time de luces/peatones
 const GROUND_DOTS = 12;   // cantidad de puntos en la ruta
 const ORDER_INTERVAL = 5;  // segundos sin pedido antes de generar uno nuevo
 
@@ -1266,7 +1291,7 @@ function updateHazard(dt) {
                 scene.remove(cone.mesh);
                 showHazardMsg('💥 ¡GOLPE!', 1.2);
                 SFX.crash();
-                flashScreen('red');
+                flashScreen('red'); flashCarRed();
                 crashStreak = 0; updateStreakHUD();
             } else {
                 // Bobbing
@@ -1322,8 +1347,11 @@ function updateHazard(dt) {
         });
         // Colisión
         if (Math.hypot(carX - d.x, carZ - d.z) < 2.8) {
-            // Pedido robado
-            if (currentOrder?.state === 'carrying') {
+            if (shieldActive) {
+                // Escudo bloquea el robo — rebotar moto
+                d.heading += Math.PI;
+                showFloatingText('🛡️ ¡BLOQUEADO!', '#00aaff');
+            } else if (currentOrder?.state === 'carrying') {
                 removeMarker(currentOrder.deliveryMarker);
                 removeDestBeacon();
                 unhighlightBuilding();
@@ -1331,7 +1359,7 @@ function updateHazard(dt) {
                 lastOrderTime = gameTime;
                 showHazardMsg('💀 ¡TE ROBARON LA PIZZA!', 3.5);
                 SFX.stolen();
-                flashScreen('red');
+                flashScreen('red'); flashCarRed();
                 showFloatingText('💀 ¡ROBADO!', '#ff0000');
                 comboCount = 0; crashStreak = 0;
                 updateComboHUD(); updateStreakHUD();
@@ -1392,6 +1420,16 @@ function startGame() {
     gameState = 'playing';
     comboCount = 0; comboTimer = 0; crashStreak = 0;
     updateComboHUD(); updateStreakHUD();
+    // Reset powerups
+    activePowerups.forEach(p => { scene.remove(p.mesh); p.mesh.geometry.dispose(); });
+    activePowerups = [];
+    shieldActive = false; shieldTimer = 0;
+    speedBoostActive = false; speedBoostTimer = 0;
+    carPhysics.maxSpeed = 0.22;
+    powerupSpawnTimer = 0;
+    document.getElementById('powerup-hud')?.classList.remove('show');
+    // Primer power-up a los 8s
+    setTimeout(() => { if (gameState === 'playing') spawnPowerup(); }, 8000);
     currentOrder = null; clearHazard(); controlLocked = false;
     orderMarkers.forEach(m => scene.remove(m)); orderMarkers = [];
     removeDestBeacon(); unhighlightBuilding();
@@ -1421,6 +1459,20 @@ function updateGameHUD() {
     const t = Math.ceil(gameTimer);
     if (cd) { cd.textContent = t; cd.className = t <= 10 ? 'urgent' : ''; }
     if (dc) dc.textContent = deliveryCount;
+    // Badge récord en vivo
+    const rec = document.getElementById('record-badge');
+    if (rec) {
+        if (gameState === 'playing' && deliveryCount > 0 && deliveryCount >= bestScore) {
+            rec.style.display = 'block';
+            rec.textContent = '🏆 RÉCORD';
+        } else {
+            rec.style.display = 'none';
+        }
+    }
+    // Música se acelera en los últimos 15s
+    if (gameState === 'playing') {
+        Music.setTempo(t <= 15 ? 178 : 132);
+    }
 }
 
 function updateOrderHUD() {
@@ -1579,6 +1631,7 @@ function createPizzaCar() {
     // Carrocería — caja roja estilo retro
     const bodyGeo = new THREE.BoxGeometry(1.8, 0.7, 3.0);
     const bodyMat = new THREE.MeshPhongMaterial({ color: 0xcc1100, shininess: 80 });
+    carBodyMat = bodyMat; // ref global para flash
     const carBody = new THREE.Mesh(bodyGeo, bodyMat);
     carBody.position.set(0, 0.6, 0);
     carBody.castShadow = true;
@@ -1934,7 +1987,7 @@ function onResize() {
 // ---- MÚSICA PROCEDURAL ----
 const Music = (() => {
     let ctx, masterGain, playing = false, nextBeat = 0, beatIdx = 0;
-    const BPM = 132, STEP = 60 / BPM / 2; // 8th notes
+    const BPM = 132; let currentSTEP = 60 / BPM / 2; // 8th notes
 
     // Notas en Hz — escala pentatónica de A menor
     const NOTES = [220, 246.94, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25];
@@ -1990,9 +2043,9 @@ const Music = (() => {
             const t = nextBeat;
             if (KICK[i])  kick(t);
             if (HIHAT[i]) hihat(t);
-            if (MELODY[i] >= 0) note(NOTES[MELODY[i]], t, STEP * 1.5, 'square', 0.12);
-            if (BASS[i]   >= 0) note(NOTES[BASS[i]] / 2, t, STEP * 1.8, 'sawtooth', 0.15, -5);
-            nextBeat += STEP;
+            if (MELODY[i] >= 0) note(NOTES[MELODY[i]], t, currentSTEP * 1.5, 'square', 0.12);
+            if (BASS[i]   >= 0) note(NOTES[BASS[i]] / 2, t, currentSTEP * 1.8, 'sawtooth', 0.15, -5);
+            nextBeat += currentSTEP;
             beatIdx++;
         }
     }
@@ -2015,7 +2068,8 @@ const Music = (() => {
             masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
             setTimeout(() => { ctx.close(); playing = false; }, 400);
         },
-        setVol(v) { if (masterGain) masterGain.gain.value = v; }
+        setVol(v) { if (masterGain) masterGain.gain.value = v; },
+        setTempo(bpm) { currentSTEP = 60 / bpm / 2; }
     };
 })();
 
@@ -2115,6 +2169,218 @@ function updateMinimap() {
     }
 }
 
+// ---- FLASH AUTO ----
+function flashCarRed() {
+    if (!carBodyMat) return;
+    carBodyMat.color.setHex(0xff2200);
+    carBodyMat.emissive.setHex(0xff1100);
+    carBodyMat.emissiveIntensity = 0.9;
+    setTimeout(() => {
+        if (carBodyMat) {
+            carBodyMat.color.setHex(0xcc1100);
+            carBodyMat.emissive.setHex(0x000000);
+            carBodyMat.emissiveIntensity = 0;
+        }
+    }, 280);
+}
+
+// ---- POWER-UPS ----
+function spawnPowerup() {
+    if (gameState !== 'playing' || activePowerups.length >= 3) return;
+    const types = ['speed','shield','time'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const cols = { speed: 0xffcc00, shield: 0x00aaff, time: 0x00ff88 };
+    const roadTiles = getRoadTiles();
+    const carX = pizzaCar?.position.x || 0, carZ = pizzaCar?.position.z || 0;
+    const nearby = roadTiles.filter(t => {
+        const d = Math.hypot(t.x - carX, t.z - carZ);
+        return d > TILE * 2 && d < TILE * 9;
+    });
+    const pool = nearby.length ? nearby : roadTiles;
+    const tile = pool[Math.floor(Math.random() * pool.length)];
+    const geo = new THREE.SphereGeometry(0.9, 8, 8);
+    const mat = new THREE.MeshPhongMaterial({ color: cols[type], emissive: cols[type], emissiveIntensity: 0.6, transparent: true, opacity: 0.92 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(tile.x, 1.3, tile.z);
+    scene.add(mesh);
+    activePowerups.push({ mesh, type, x: tile.x, z: tile.z });
+}
+
+function applyPowerup(type) {
+    SFX.pickup();
+    const hud = document.getElementById('powerup-hud');
+    if (type === 'speed') {
+        speedBoostActive = true; speedBoostTimer = 6;
+        carPhysics.maxSpeed = 0.22 * 1.7;
+        showFloatingText('⚡ SPEED x1.7!', '#ffcc00');
+        if (hud) { hud.style.color = '#ffcc00'; hud.textContent = '⚡ SPEED BOOST'; hud.classList.add('show'); }
+    } else if (type === 'shield') {
+        shieldActive = true; shieldTimer = 10;
+        showFloatingText('🛡️ ¡ESCUDO!', '#00aaff');
+        if (hud) { hud.style.color = '#00aaff'; hud.textContent = '🛡️ ESCUDO ACTIVO'; hud.classList.add('show'); }
+    } else {
+        gameTimer = Math.min(gameTimer + 10, 99);
+        showFloatingText('+10s ⏱', '#00ff88');
+    }
+}
+
+function updatePowerups(dt) {
+    if (!pizzaCar) return;
+    powerupSpawnTimer += dt;
+    if (powerupSpawnTimer > 13 && gameState === 'playing') { powerupSpawnTimer = 0; spawnPowerup(); }
+    const carX = pizzaCar.position.x, carZ = pizzaCar.position.z;
+    for (let i = activePowerups.length - 1; i >= 0; i--) {
+        const p = activePowerups[i];
+        p.mesh.rotation.y += dt * 2.2;
+        p.mesh.position.y = 1.3 + Math.sin(gameTime * 3 + i * 1.5) * 0.25;
+        if (Math.hypot(carX - p.x, carZ - p.z) < 2.8) {
+            scene.remove(p.mesh); p.mesh.geometry.dispose();
+            activePowerups.splice(i, 1);
+            applyPowerup(p.type);
+        }
+    }
+    if (speedBoostActive) {
+        speedBoostTimer -= dt;
+        if (speedBoostTimer <= 0) {
+            speedBoostActive = false; carPhysics.maxSpeed = 0.22;
+            const hud = document.getElementById('powerup-hud');
+            if (hud) hud.classList.remove('show');
+        }
+    }
+    if (shieldActive) {
+        shieldTimer -= dt;
+        if (shieldTimer <= 0) {
+            shieldActive = false;
+            const hud = document.getElementById('powerup-hud');
+            if (hud) hud.classList.remove('show');
+        }
+    }
+}
+
+// ---- SEMÁFOROS ----
+function initTrafficLights() {
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const allIntersections = [];
+    MAP.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell === 1) allIntersections.push({ x: offX + c * TILE + TILE / 2, z: offZ + r * TILE + TILE / 2 });
+    }));
+    // Elegir 6 al azar
+    const chosen = allIntersections.sort(() => Math.random() - 0.5).slice(0, 6);
+    chosen.forEach((pt, idx) => {
+        const post = new THREE.Group();
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,3.2,6), new THREE.MeshPhongMaterial({color:0x222222}));
+        post.add(pole);
+        const rMat = new THREE.MeshPhongMaterial({color:0xff0000, emissive:0xff0000, emissiveIntensity:1.0});
+        const gMat = new THREE.MeshPhongMaterial({color:0x00ff44, emissive:0x00ff44, emissiveIntensity:0.1});
+        const rLight = new THREE.Mesh(new THREE.SphereGeometry(0.28,8,8), rMat);
+        const gLight = new THREE.Mesh(new THREE.SphereGeometry(0.28,8,8), gMat);
+        rLight.position.set(0, 1.9, 0);
+        gLight.position.set(0, 1.2, 0);
+        post.add(rLight); post.add(gLight);
+        post.position.set(pt.x + 2.5, 0, pt.z + 2.5);
+        scene.add(post);
+        trafficLights.push({
+            post, rLight, gLight, rMat, gMat,
+            x: pt.x, z: pt.z,
+            state: idx % 2 === 0 ? 'red' : 'green',
+            timer: (idx % 2) * (TRAFFIC_CYCLE / 2)
+        });
+    });
+}
+
+function updateTrafficLights(dt) {
+    if (!trafficLights.length || !pizzaCar || gameState !== 'playing') return;
+    const carX = pizzaCar.position.x, carZ = pizzaCar.position.z;
+    trafficLights.forEach(tl => {
+        tl.timer += dt;
+        if (tl.timer >= TRAFFIC_CYCLE) {
+            tl.timer = 0;
+            tl.state = tl.state === 'red' ? 'green' : 'red';
+        }
+        const red = tl.state === 'red';
+        tl.rMat.emissiveIntensity = red ? 1.0 : 0.08;
+        tl.gMat.emissiveIntensity = red ? 0.08 : 1.0;
+        // Penalización si pasa en rojo a velocidad
+        if (red && Math.abs(carPhysics.speed) > 0.13 && Math.hypot(carX - tl.x, carZ - tl.z) < TILE * 0.55) {
+            if (!tl._cd) {
+                tl._cd = true;
+                setTimeout(() => { tl._cd = false; }, 3500);
+                gameTimer = Math.max(gameTimer - 3, 0);
+                flashScreen('red'); flashCarRed();
+                showFloatingText('🚦 -3s ¡SEMÁFORO!', '#ff4400');
+                SFX.crash();
+            }
+        } else if (Math.hypot(carX - tl.x, carZ - tl.z) > TILE * 1.2) {
+            tl._cd = false;
+        }
+    });
+}
+
+// ---- PEATONES ----
+function initPedestrians() {
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const roadRows = [0,5,10,15], roadCols = [0,5,10,15];
+    const palette = [0xffaa88, 0x88aaff, 0xffdd88, 0xaa88ff, 0x88ffaa, 0xff88aa, 0xaaffdd, 0xddaaff];
+    for (let i = 0; i < 10; i++) {
+        const useRow = Math.random() < 0.5;
+        const roadLine = (useRow ? roadRows : roadCols)[Math.floor(Math.random() * 4)];
+        const otherPos = Math.floor(Math.random() * MAP[0].length);
+        const col = useRow ? otherPos : roadLine;
+        const row = useRow ? roadLine : otherPos;
+        const x = offX + col * TILE + TILE * 0.5 + (Math.random() - 0.5) * TILE * 0.4;
+        const z = offZ + row * TILE + TILE * 0.5 + (Math.random() - 0.5) * TILE * 0.4;
+        const grp = new THREE.Group();
+        const mat = new THREE.MeshPhongMaterial({ color: palette[i % palette.length] });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.42,0.85,0.32), mat);
+        body.position.y = 0.8;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 6), mat);
+        head.position.y = 1.5;
+        grp.add(body); grp.add(head);
+        grp.position.set(x, 0, z);
+        scene.add(grp);
+        pedestrians.push({
+            mesh: grp, x, z,
+            axis: useRow ? 'z' : 'x',
+            dir: Math.random() < 0.5 ? 1 : -1,
+            speed: 0.025 + Math.random() * 0.025,
+            range: TILE * 1.5
+        });
+    }
+}
+
+function updatePedestrians(dt) {
+    if (!pizzaCar) return;
+    const carX = pizzaCar.position.x, carZ = pizzaCar.position.z;
+    pedestrians.forEach(p => {
+        const move = p.speed * p.dir;
+        if (p.axis === 'x') {
+            p.x += move; p.mesh.position.x = p.x;
+            p.mesh.rotation.y = p.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
+            if (Math.abs(p.x) > 125) p.dir *= -1;
+        } else {
+            p.z += move; p.mesh.position.z = p.z;
+            p.mesh.rotation.y = p.dir > 0 ? Math.PI : 0;
+            if (Math.abs(p.z) > 125) p.dir *= -1;
+        }
+        // Bobbing animation
+        p.mesh.position.y = Math.sin(gameTime * 8 + p.x + p.z) * 0.05;
+        if (gameState === 'playing' && Math.hypot(carX - p.x, carZ - p.z) < 1.6) {
+            if (!p._cd) {
+                p._cd = true;
+                setTimeout(() => { p._cd = false; }, 2200);
+                p.dir *= -1;
+                comboCount = 0; crashStreak = 0;
+                updateComboHUD(); updateStreakHUD();
+                flashScreen('red'); flashCarRed();
+                showFloatingText('👤 ¡PEATÓN!', '#ff8800');
+                SFX.crash();
+            }
+        }
+    });
+}
+
 // ---- LOOP ----
 let lastTime = performance.now();
 function animate() {
@@ -2123,6 +2389,12 @@ function animate() {
     const dt = Math.min((now - lastTime) / 1000, 0.1); // segundos, cap a 100ms
     lastTime = now;
 
+    // One-time init de semáforos y peatones (después de que la ciudad cargue)
+    if (!gameInited && pizzaCar) {
+        gameInited = true;
+        initTrafficLights();
+        initPedestrians();
+    }
     handleInput();
     if (currentStyle !== 'classic') updateRain();
     if (!window._freezeCar) updatePizzaCar();
@@ -2133,6 +2405,9 @@ function animate() {
     const isTurbo = keys['ShiftLeft'] || keys['ShiftRight'];
     updateSmoke(dt, isTurbo);
     updateHazard(dt);
+    updatePowerups(dt);
+    updateTrafficLights(dt);
+    updatePedestrians(dt);
     if (controlLocked) { controlLockTimer -= dt; if (controlLockTimer <= 0) controlLocked = false; }
     // combo decay
     if (gameState === 'playing') {
