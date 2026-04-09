@@ -218,6 +218,30 @@
             100% { transform: scale(1); }
         }
         .pop { animation: pop 0.3s ease; }
+        @keyframes floatUp {
+            0%   { opacity:1; transform:translate(-50%,-50%) scale(1.3); }
+            60%  { opacity:1; transform:translate(-50%,-90%) scale(1); }
+            100% { opacity:0; transform:translate(-50%,-130%) scale(0.8); }
+        }
+        @keyframes flashFade { 0%{opacity:1} 100%{opacity:0} }
+        #screen-flash { position:fixed;inset:0;pointer-events:none;z-index:25;opacity:0; }
+        #screen-flash.green { background:rgba(0,255,100,0.22); animation:flashFade 0.5s ease forwards; }
+        #screen-flash.red   { background:rgba(255,0,0,0.28);   animation:flashFade 0.4s ease forwards; }
+        #combo-hud {
+            position:fixed; top:76px; left:50%; transform:translateX(-50%);
+            font-size:20px; font-weight:900; color:#ff9900;
+            text-shadow:0 0 12px #ff6600; pointer-events:none;
+            opacity:0; transition:opacity 0.3s; z-index:15;
+            background:rgba(0,0,0,0.6); border-radius:20px; padding:4px 18px;
+        }
+        #combo-hud.show { opacity:1; }
+        #streak-display { font-size:16px; color:#00ffcc; letter-spacing:1px; }
+        #minimap {
+            position:fixed; bottom:20px; left:20px; z-index:15;
+            border:1px solid rgba(255,255,255,0.18); border-radius:8px;
+            background:rgba(0,0,0,0.65); pointer-events:none;
+        }
+        @media (pointer: coarse) { #minimap { bottom:170px; } }
     </style>
 </head>
 <body>
@@ -299,10 +323,14 @@
 <div id="game-hud" style="display:none">
     <div id="countdown-display">60</div>
     <div id="delivery-display">🍕 <span id="delivery-count">0</span></div>
+    <div id="streak-display"></div>
     <div id="mute-btn" onclick="toggleMute()" title="Mute">🔊</div>
 </div>
 <div id="turbo-hud">⚡ TURBO</div>
 <div id="hazard-hud"></div>
+<div id="screen-flash"></div>
+<div id="combo-hud"></div>
+<canvas id="minimap" width="120" height="120"></canvas>
 
 <!-- THREE.JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -732,6 +760,10 @@ const smokeParticles = [];  // partículas de humo en ruedas traseras
 let activeHazard = null;    // { type, meshes, data }
 let controlLocked = false;  // aceite bloquea steering
 let controlLockTimer = 0;
+let comboCount = 0;         // entregas seguidas
+let comboTimer = 0;         // segundos desde última entrega
+const COMBO_WINDOW = 20;    // ventana de combo en segundos
+let crashStreak = 0;        // entregas sin chocar con cajas
 const GROUND_DOTS = 12;   // cantidad de puntos en la ruta
 const ORDER_INTERVAL = 5;  // segundos sin pedido antes de generar uno nuevo
 
@@ -1233,6 +1265,9 @@ function updateHazard(dt) {
                 carPhysics.heading += (Math.random() - 0.5) * 1.0;
                 scene.remove(cone.mesh);
                 showHazardMsg('💥 ¡GOLPE!', 1.2);
+                SFX.crash();
+                flashScreen('red');
+                crashStreak = 0; updateStreakHUD();
             } else {
                 // Bobbing
                 cone.mesh.rotation.y += dt * 1.5;
@@ -1295,6 +1330,11 @@ function updateHazard(dt) {
                 currentOrder = null;
                 lastOrderTime = gameTime;
                 showHazardMsg('💀 ¡TE ROBARON LA PIZZA!', 3.5);
+                SFX.stolen();
+                flashScreen('red');
+                showFloatingText('💀 ¡ROBADO!', '#ff0000');
+                comboCount = 0; crashStreak = 0;
+                updateComboHUD(); updateStreakHUD();
                 clearHazard();
             }
         }
@@ -1319,15 +1359,21 @@ function spawnOrder() {
     const timeLimit = Math.max(20, Math.round(dist * 0.8));
     const reward = Math.round(50 + dist * 1.5);
 
+    // Pizza urgente cada 4 entregas
+    const isUrgent = deliveryCount > 0 && deliveryCount % 4 === 0;
+    const finalReward = isUrgent ? reward * 2 : reward;
+    const finalTime = isUrgent ? Math.min(timeLimit, 18) : timeLimit;
+
     currentOrder = {
         state: 'waiting', // waiting → carrying → done
         pickupPos: pickup,
         deliveryPos: { x: delivery.roadX, z: delivery.roadZ }, // posición en la calle (para detección + beacon)
         buildingPos: { x: delivery.x, z: delivery.z },         // posición del edificio (para highlight)
-        timeLeft: timeLimit,
-        timeLimit,
-        reward,
-        pickupMarker: createMarker(pickup.x, pickup.z, 'pickup'),
+        timeLeft: finalTime,
+        timeLimit: finalTime,
+        reward: finalReward,
+        urgent: isUrgent,
+        pickupMarker: createMarker(pickup.x, pickup.z, isUrgent ? 'delivery' : 'pickup'),
         deliveryMarker: null // se crea al recoger
     };
 
@@ -1344,6 +1390,8 @@ function startGame() {
     // Reset state
     money = 0; deliveryCount = 0; gameTimer = 60; gameTime = 0;
     gameState = 'playing';
+    comboCount = 0; comboTimer = 0; crashStreak = 0;
+    updateComboHUD(); updateStreakHUD();
     currentOrder = null; clearHazard(); controlLocked = false;
     orderMarkers.forEach(m => scene.remove(m)); orderMarkers = [];
     removeDestBeacon(); unhighlightBuilding();
@@ -1387,14 +1435,15 @@ function updateOrderHUD() {
         return;
     }
     if (currentOrder.state === 'waiting') {
-        statusEl.textContent = '📍 Ve a recoger la pizza';
-        timerEl.textContent = '';
-        destEl.textContent = '→ Dirígete al marcador VERDE';
+        statusEl.textContent = currentOrder.urgent ? '🔥 ¡URGENTE! Ve a recoger' : '📍 Ve a recoger la pizza';
+        timerEl.textContent = currentOrder.urgent ? '⚡ x2 REWARD' : '';
+        timerEl.className = currentOrder.urgent ? 'urgent' : '';
+        destEl.textContent = '→ Dirígete al marcador ' + (currentOrder.urgent ? 'ROJO' : 'VERDE');
     } else if (currentOrder.state === 'carrying') {
         const t = Math.ceil(currentOrder.timeLeft);
-        statusEl.textContent = '🚗 ¡Entrega en camino!';
+        statusEl.textContent = currentOrder.urgent ? '🔥 ¡URGENTE! Entrega YA' : '🚗 ¡Entrega en camino!';
         timerEl.textContent = `⏱ ${t}s`;
-        timerEl.className = t <= 8 ? 'urgent' : '';
+        timerEl.className = (t <= 8 || currentOrder.urgent) ? 'urgent' : '';
         destEl.textContent = `💰 +$${currentOrder.reward} al entregar`;
     }
 }
@@ -1455,6 +1504,8 @@ function updateOrders(dt) {
             createDestBeacon(currentOrder.deliveryPos.x, currentOrder.deliveryPos.z);
             highlightBuilding(currentOrder.buildingPos.x, currentOrder.buildingPos.z);
             if (!activeHazard) setTimeout(spawnHazard, 1200);
+            SFX.pickup();
+            if (currentOrder.urgent) { SFX.urgent(); showFloatingText('🔥 ¡URGENTE! x2 $$$', '#ff4400'); }
             updateOrderHUD();
         }
 
@@ -1471,6 +1522,9 @@ function updateOrders(dt) {
             clearHazard(); controlLocked = false;
             currentOrder = null;
             lastOrderTime = gameTime;
+            comboCount = 0; updateComboHUD();
+            flashScreen('red');
+            showFloatingText('❌ ¡TIEMPO!', '#ff4400');
             document.getElementById('order-status').textContent = '❌ ¡Pedido fallido! Tiempo agotado';
             document.getElementById('order-timer').textContent = '';
             setTimeout(() => updateOrderHUD(), 2000);
@@ -1482,9 +1536,15 @@ function updateOrders(dt) {
         const dz = carZ - currentOrder.deliveryPos.z;
         if (Math.hypot(dx, dz) < PICKUP_RADIUS) {
             // Entrega exitosa
-            money += currentOrder.reward;
+            const earnedReward = currentOrder.reward;
+            const wasUrgent = currentOrder.urgent;
+            money += earnedReward;
             deliveryCount++;
             gameTimer = Math.min(gameTimer + 8, 99); // +8s por entrega
+            comboCount++; comboTimer = 0;
+            crashStreak++;
+            // Combo multiplier (a partir de combo 3 da bonus visual)
+            const comboMult = comboCount >= 3 ? Math.min(comboCount - 1, 4) : 1;
             removeMarker(currentOrder.deliveryMarker);
             removeDestBeacon();
             unhighlightBuilding();
@@ -1492,6 +1552,16 @@ function updateOrders(dt) {
             currentOrder = null;
             lastOrderTime = gameTime;
             updateMoneyHUD();
+            // Feedback visual
+            flashScreen('green');
+            SFX.deliver();
+            showFloatingText('+8s ⏱', '#00ff88');
+            setTimeout(() => showFloatingText('+$' + earnedReward, '#ffcc00'), 300);
+            if (wasUrgent) setTimeout(() => showFloatingText('🔥 URGENTE +BONUS!', '#ff4400'), 600);
+            if (comboMult >= 2) setTimeout(() => showFloatingText('🔥 x' + comboMult + ' COMBO!', '#ff9900'), 500);
+            if (crashStreak >= 3) setTimeout(() => showFloatingText('🎯 FLAWLESS!', '#00ffcc'), 700);
+            updateComboHUD();
+            updateStreakHUD();
             document.getElementById('order-status').textContent = '✅ ¡Entregado! Nuevo pedido pronto...';
             document.getElementById('order-timer').textContent = '';
             // Pop animación en el score
@@ -1949,6 +2019,102 @@ const Music = (() => {
     };
 })();
 
+// ---- FEEDBACK VISUAL / AUDIO ----
+function showFloatingText(text, color = '#00ff88') {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText = `position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);
+        font-size:36px;font-weight:900;color:${color};text-shadow:0 0 20px ${color};
+        pointer-events:none;z-index:30;animation:floatUp 1.2s ease forwards;white-space:nowrap;`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1250);
+}
+
+function flashScreen(type) {
+    const el = document.getElementById('screen-flash');
+    el.className = '';
+    void el.offsetWidth;
+    el.className = type;
+}
+
+const SFX = (() => {
+    let ctx;
+    function init() { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    function beep(freq, dur, type='square', vol=0.3) {
+        try {
+            init();
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = type; o.frequency.value = freq;
+            g.gain.setValueAtTime(vol, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+            o.connect(g); g.connect(ctx.destination);
+            o.start(); o.stop(ctx.currentTime + dur + 0.01);
+        } catch(e) {}
+    }
+    return {
+        pickup()  { beep(440,0.08,'square',0.2); setTimeout(()=>beep(660,0.1,'square',0.2),80); },
+        deliver() { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.14,'square',0.22),i*75)); },
+        crash()   { beep(130,0.25,'sawtooth',0.35); },
+        stolen()  { beep(220,0.18,'sawtooth',0.3); setTimeout(()=>beep(160,0.35,'sawtooth',0.3),180); },
+        urgent()  { beep(880,0.08,'square',0.25); setTimeout(()=>beep(880,0.08,'square',0.25),150); },
+    };
+})();
+
+function updateComboHUD() {
+    const el = document.getElementById('combo-hud');
+    if (!el) return;
+    if (comboCount >= 2) {
+        const mult = Math.min(comboCount, 5);
+        el.textContent = `🔥 x${mult} COMBO!`;
+        el.classList.add('show');
+    } else {
+        el.classList.remove('show');
+    }
+}
+
+function updateStreakHUD() {
+    const el = document.getElementById('streak-display');
+    if (!el) return;
+    el.textContent = crashStreak >= 2 ? `🎯x${crashStreak}` : '';
+}
+
+function updateMinimap() {
+    const canvas = document.getElementById('minimap');
+    if (!canvas || !pizzaCar) return;
+    const ctx2 = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const worldSize = MAP[0].length * TILE;
+    const scale = W / worldSize;
+    const offX = worldSize / 2;
+    ctx2.clearRect(0, 0, W, H);
+    // Calles
+    MAP.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell === 1 || cell === 2 || cell === 3) {
+            ctx2.fillStyle = '#3a3a3a';
+            ctx2.fillRect(c * TILE * scale, r * TILE * scale, TILE * scale, TILE * scale);
+        }
+    }));
+    // Auto (naranja)
+    const cx = (pizzaCar.position.x + offX) * scale;
+    const cz = (pizzaCar.position.z + offX) * scale;
+    ctx2.fillStyle = '#ff6600';
+    ctx2.beginPath(); ctx2.arc(cx, cz, 4, 0, Math.PI * 2); ctx2.fill();
+    // Destino entrega (amarillo parpadeante)
+    if (currentOrder?.deliveryPos) {
+        const dx2 = (currentOrder.deliveryPos.x + offX) * scale;
+        const dz2 = (currentOrder.deliveryPos.z + offX) * scale;
+        ctx2.fillStyle = currentOrder.urgent ? '#ff4400' : '#ffcc00';
+        ctx2.beginPath(); ctx2.arc(dx2, dz2, 5, 0, Math.PI * 2); ctx2.fill();
+    }
+    // Pickup (verde)
+    if (currentOrder?.state === 'waiting' && currentOrder?.pickupPos) {
+        const px = (currentOrder.pickupPos.x + offX) * scale;
+        const pz = (currentOrder.pickupPos.z + offX) * scale;
+        ctx2.fillStyle = '#00ff88';
+        ctx2.beginPath(); ctx2.arc(px, pz, 5, 0, Math.PI * 2); ctx2.fill();
+    }
+}
+
 // ---- LOOP ----
 let lastTime = performance.now();
 function animate() {
@@ -1968,6 +2134,12 @@ function animate() {
     updateSmoke(dt, isTurbo);
     updateHazard(dt);
     if (controlLocked) { controlLockTimer -= dt; if (controlLockTimer <= 0) controlLocked = false; }
+    // combo decay
+    if (gameState === 'playing') {
+        comboTimer += dt;
+        if (comboTimer > COMBO_WINDOW && comboCount > 0) { comboCount = 0; updateComboHUD(); }
+    }
+    updateMinimap();
     composer.render();
 }
 
