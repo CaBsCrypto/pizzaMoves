@@ -1484,7 +1484,7 @@ function updateOrders(dt) {
             // Entrega exitosa
             money += currentOrder.reward;
             deliveryCount++;
-            gameTimer = Math.min(gameTimer + 15, 99); // +15s por entrega
+            gameTimer = Math.min(gameTimer + 8, 99); // +8s por entrega
             removeMarker(currentOrder.deliveryMarker);
             removeDestBeacon();
             unhighlightBuilding();
