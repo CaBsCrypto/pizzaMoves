@@ -1,0 +1,2050 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SLICE PROTOCOL</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; }
+
+        #loading {
+            position: fixed; inset: 0;
+            background: #000;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 100; color: white;
+            transition: opacity 0.8s;
+        }
+        #loading h1 {
+            font-size: 48px; font-weight: 900;
+            color: #ff6b00;
+            text-shadow: 0 0 30px #ff6b00, 0 0 60px #ff4400;
+            letter-spacing: 6px;
+            margin-bottom: 8px;
+        }
+        #loading p { color: #888; font-size: 14px; letter-spacing: 3px; margin-bottom: 40px; }
+        #loading-bar-wrap {
+            width: 300px; height: 4px;
+            background: #111; border-radius: 2px; overflow: hidden;
+        }
+        #loading-bar {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, #ff4400, #ff6b00);
+            border-radius: 2px;
+            transition: width 0.3s;
+            box-shadow: 0 0 10px #ff6b00;
+        }
+        #loading-text { margin-top: 12px; font-size: 11px; color: #444; letter-spacing: 2px; }
+
+        #hud {
+            position: fixed; top: 20px; left: 20px;
+            pointer-events: none; z-index: 10;
+        }
+        .hud-title {
+            font-size: 22px; font-weight: 900;
+            color: #ff6b00;
+            text-shadow: 0 0 20px #ff6b00;
+            letter-spacing: 4px;
+        }
+        .hud-sub { font-size: 11px; color: #555; letter-spacing: 3px; margin-top: 2px; }
+
+        #controls {
+            position: fixed; bottom: 20px; left: 20px;
+            pointer-events: none; z-index: 10;
+            color: #333; font-size: 11px; line-height: 1.8;
+            letter-spacing: 1px;
+        }
+        #controls span { color: #ff6b00; }
+
+        #style-panel {
+            position: fixed; top: 20px; right: 20px;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #222;
+            border-radius: 8px; padding: 16px;
+            z-index: 10; min-width: 180px;
+        }
+        #style-panel h3 {
+            color: #ff6b00; font-size: 11px;
+            letter-spacing: 2px; margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+        .style-btn {
+            display: block; width: 100%;
+            background: #111; border: 1px solid #222;
+            color: #666; padding: 8px 12px;
+            border-radius: 4px; cursor: pointer;
+            font-size: 11px; letter-spacing: 1px;
+            margin-bottom: 6px; text-align: left;
+            transition: all 0.2s;
+        }
+        .style-btn:hover, .style-btn.active {
+            background: #1a0a00;
+            border-color: #ff6b00;
+            color: #ff6b00;
+        }
+        .style-btn .dot {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; margin-right: 8px;
+        }
+        #order-hud {
+            position: fixed; bottom: 20px; right: 20px;
+            background: rgba(0,0,0,0.75);
+            border: 1px solid #333;
+            border-radius: 10px; padding: 14px 18px;
+            z-index: 10; min-width: 220px;
+            pointer-events: none;
+        }
+        #order-status {
+            color: #fff; font-size: 13px;
+            letter-spacing: 1px; margin-bottom: 6px;
+        }
+        #order-timer {
+            color: #ff6b00; font-size: 22px; font-weight: 900;
+            letter-spacing: 2px;
+        }
+        #order-timer.urgent { color: #ff2200; animation: pulse 0.5s infinite alternate; }
+        #order-dest { color: #aaa; font-size: 10px; margin-top: 4px; letter-spacing: 1px; }
+        /* ---- START / GAMEOVER SCREENS ---- */
+        #start-screen, #gameover-screen {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(0,0,0,0.82);
+            display: flex; align-items: center; justify-content: center;
+        }
+        #start-inner, #gameover-inner {
+            text-align: center; padding: 40px 50px;
+            background: rgba(10,10,20,0.95);
+            border: 2px solid #ff6600; border-radius: 20px;
+            box-shadow: 0 0 40px rgba(255,100,0,0.4);
+        }
+        #start-title { font-size: 42px; font-weight: 900; color: #ff6600; letter-spacing: 4px; margin-bottom: 4px; }
+        #start-sub { font-size: 11px; letter-spacing: 6px; color: #888; margin-bottom: 28px; }
+        #start-rule { font-size: 16px; color: #fff; line-height: 1.7; margin-bottom: 16px; }
+        #start-best { font-size: 14px; color: #ffcc00; margin-bottom: 28px; }
+        #start-btn, #gameover-btn {
+            background: #ff6600; color: #000; border: none;
+            font-size: 20px; font-weight: 900; letter-spacing: 3px;
+            padding: 14px 48px; border-radius: 40px; cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            box-shadow: 0 0 20px #ff6600;
+        }
+        #start-btn:hover, #gameover-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px #ff9900; }
+        #start-keys { font-size: 10px; color: #555; margin-top: 20px; letter-spacing: 2px; }
+        #gameover-title { font-size: 52px; font-weight: 900; color: #ff6600; margin-bottom: 16px; }
+        #gameover-score { font-size: 28px; color: #fff; margin-bottom: 8px; }
+        #gameover-best { font-size: 14px; color: #ffcc00; margin-bottom: 28px; }
+        /* ---- GAME HUD ---- */
+        #game-hud {
+            position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 24px; align-items: center;
+            background: rgba(0,0,0,0.75); border: 1px solid #333;
+            border-radius: 30px; padding: 8px 28px; z-index: 10;
+            pointer-events: none;
+        }
+        #countdown-display {
+            font-size: 32px; font-weight: 900; color: #ff6600; letter-spacing: 2px;
+            min-width: 48px; text-align: center;
+        }
+        #countdown-display.urgent { color: #ff2200; animation: pulse 0.4s infinite alternate; }
+        #delivery-display { font-size: 22px; font-weight: 900; color: #ffcc00; letter-spacing: 1px; }
+        #mute-btn { font-size: 18px; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; }
+        #mute-btn:hover { opacity: 1; }
+        #score-hud {
+            position: fixed; top: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            border: 1px solid #333; border-radius: 20px;
+            padding: 6px 20px; z-index: 10;
+            color: #ffcc00; font-size: 18px; font-weight: 900;
+            letter-spacing: 2px; pointer-events: none; display:none;
+        }
+        /* ---- JOYSTICK MOBILE ---- */
+        #joystick-zone {
+            position: fixed; bottom: 30px; left: 40px;
+            width: 130px; height: 130px; z-index: 50;
+            display: none;
+        }
+        #joystick-base {
+            width: 130px; height: 130px; border-radius: 50%;
+            background: rgba(255,255,255,0.12);
+            border: 2px solid rgba(255,255,255,0.3);
+            position: relative; touch-action: none;
+        }
+        #joystick-knob {
+            width: 54px; height: 54px; border-radius: 50%;
+            background: rgba(255,102,0,0.85);
+            border: 2px solid #ff9900;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            pointer-events: none;
+            box-shadow: 0 0 14px rgba(255,102,0,0.6);
+        }
+        #turbo-btn {
+            position: fixed; bottom: 50px; right: 40px;
+            width: 72px; height: 72px; border-radius: 50%;
+            background: linear-gradient(135deg,#ff6600,#ffcc00);
+            border: none; font-size: 28px; color: #000;
+            z-index: 50; display: none; touch-action: none;
+            box-shadow: 0 0 20px rgba(255,102,0,0.7);
+        }
+        @media (pointer: coarse) {
+            #joystick-zone, #turbo-btn { display: block; }
+            #controls { display: none; }
+        }
+        #hazard-hud {
+            position: fixed; top: 42%; left: 50%; transform: translate(-50%,-50%);
+            font-size: 24px; font-weight: 900; letter-spacing: 2px;
+            color: #ff2200; text-shadow: 0 0 14px #ff0000, 0 2px 0 #000;
+            pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 20;
+        }
+        #hazard-hud.show { opacity: 1; animation: pulse 0.35s infinite alternate; }
+        #turbo-hud {
+            position: fixed; bottom: 80px; left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #ff6600, #ffcc00);
+            border-radius: 20px; padding: 6px 22px;
+            color: #000; font-size: 16px; font-weight: 900;
+            letter-spacing: 3px; pointer-events: none;
+            opacity: 0; transition: opacity 0.15s;
+            z-index: 10; box-shadow: 0 0 20px #ff6600;
+        }
+        #turbo-hud.active { opacity: 1; animation: turbo-flash 0.3s infinite alternate; }
+        @keyframes turbo-flash { from { box-shadow: 0 0 20px #ff6600; } to { box-shadow: 0 0 40px #ffcc00; } }
+        @keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+            100% { transform: scale(1); }
+        }
+        .pop { animation: pop 0.3s ease; }
+    </style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading">
+    <h1>SLICE</h1>
+    <p>PROTOCOL</p>
+    <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+    <div id="loading-text">CARGANDO CIUDAD...</div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+    <div class="hud-title">SLICE PROTOCOL</div>
+    <div class="hud-sub">DELIVERY · FUTURE · CITY</div>
+</div>
+
+<!-- CONTROLES -->
+<div id="controls">
+    <span>W</span> — adelante &nbsp; <span>S</span> — atrás<br>
+    <span>A</span> — izquierda &nbsp; <span>D</span> — derecha<br>
+    <span>RUEDA</span> — zoom &nbsp; <span>SHIFT</span> — turbo
+</div>
+
+<!-- JOYSTICK MOBILE -->
+<div id="joystick-zone">
+    <div id="joystick-base">
+        <div id="joystick-knob"></div>
+    </div>
+</div>
+<button id="turbo-btn" ontouchstart="keys['ShiftLeft']=true" ontouchend="keys['ShiftLeft']=false">⚡</button>
+
+<!-- PANEL DE ESTILOS -->
+<div id="style-panel">
+    <h3>🎨 Estilo Visual</h3>
+    <button class="style-btn active" onclick="setStyle('classic')" id="btn-classic">
+        <span class="dot" style="background:#87ceeb"></span>☀️ Día
+    </button>
+    <button class="style-btn" onclick="setStyle('neon')" id="btn-neon">
+        <span class="dot" style="background:#1a2a3a"></span>🌙 Noche
+    </button>
+    <button class="style-btn" onclick="setStyle('cyber')" id="btn-cyber">
+        <span class="dot" style="background:#f4a460"></span>🌅 Atardecer
+    </button>
+    <button class="style-btn" onclick="setStyle('sunset')" id="btn-sunset">
+        <span class="dot" style="background:#b0c4de"></span>☁️ Nublado
+    </button>
+</div>
+
+<!-- PANTALLA DE INICIO -->
+<div id="start-screen">
+    <div id="start-inner">
+        <div id="start-title">🍕 SLICE PROTOCOL</div>
+        <div id="start-sub">DELIVERY · FUTURE · CITY</div>
+        <div id="start-rule">¡Entrega la mayor cantidad de pizzas<br>en <span style="color:#ff6600;font-size:1.3em">60 SEGUNDOS</span>!</div>
+        <div id="start-best">🏆 Mejor: <span id="best-display">0</span> entregas</div>
+        <button id="start-btn" onclick="startGame()">▶ INICIAR</button>
+        <div id="start-keys">W/A/S/D mover &nbsp;·&nbsp; SHIFT turbo &nbsp;·&nbsp; RUEDA zoom</div>
+    </div>
+</div>
+
+<!-- PANTALLA DE FIN -->
+<div id="gameover-screen" style="display:none">
+    <div id="gameover-inner">
+        <div id="gameover-title">⏱ ¡TIEMPO!</div>
+        <div id="gameover-score"></div>
+        <div id="gameover-best"></div>
+        <button id="gameover-btn" onclick="startGame()">▶ JUGAR DE NUEVO</button>
+    </div>
+</div>
+
+<!-- HUD DE PEDIDOS -->
+<div id="order-hud" style="display:none">
+    <div id="order-status">🍕 Buscando pedido...</div>
+    <div id="order-timer"></div>
+    <div id="order-dest"></div>
+</div>
+<div id="game-hud" style="display:none">
+    <div id="countdown-display">60</div>
+    <div id="delivery-display">🍕 <span id="delivery-count">0</span></div>
+    <div id="mute-btn" onclick="toggleMute()" title="Mute">🔊</div>
+</div>
+<div id="turbo-hud">⚡ TURBO</div>
+<div id="hazard-hud"></div>
+
+<!-- THREE.JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+
+<script>
+// ============================================================
+// SLICE PROTOCOL — Ciudad 3D con assets Kenney CC0
+// ============================================================
+
+const STYLES = {
+    classic: {
+        bg: 0x87ceeb,
+        fog: { color: 0xadd8f0, near: 120, far: 280 },
+        ambient: { color: 0xffffff, intensity: 0.85 },
+        sun: { color: 0xfff8e7, intensity: 1.4, pos: [40, 60, 30] },
+        bloom: { strength: 0.0, radius: 0.0, threshold: 1.0 },
+        ground: 0x6b8f4e,
+        label: '☀️ Día'
+    },
+    neon: {
+        bg: 0x1a2a3a,
+        fog: { color: 0x1a2a3a, near: 120, far: 280 },
+        ambient: { color: 0xffffff, intensity: 0.7 },
+        sun: { color: 0xc8e0ff, intensity: 1.1, pos: [30, 50, 20] },
+        bloom: { strength: 0.0, radius: 0.0, threshold: 1.0 },
+        ground: 0x1a2a3a,
+        label: '🌙 Noche'
+    },
+    cyber: {
+        bg: 0xf4a460,
+        fog: { color: 0xf4c080, near: 120, far: 280 },
+        ambient: { color: 0xffffff, intensity: 0.8 },
+        sun: { color: 0xff9944, intensity: 1.6, pos: [-50, 20, 30] },
+        bloom: { strength: 0.0, radius: 0.0, threshold: 1.0 },
+        ground: 0xb8864e,
+        label: '🌅 Atardecer'
+    },
+    sunset: {
+        bg: 0xb0c4de,
+        fog: { color: 0xc8d8e8, near: 120, far: 280 },
+        ambient: { color: 0xffffff, intensity: 0.6 },
+        sun: { color: 0xffeedd, intensity: 0.9, pos: [20, 30, -40] },
+        bloom: { strength: 0.0, radius: 0.0, threshold: 1.0 },
+        ground: 0x8fae7a,
+        label: '☁️ Nublado'
+    }
+};
+
+let currentStyle = 'classic';
+let scene, camera, renderer, composer, bloomPass;
+let sunLight, ambientLight, groundMesh;
+let loadedModels = {};
+let cityGroup;
+let rain = [];
+let camAngle = Math.PI / 4;
+let camDist = 180;
+let camHeight = 150;
+let camTarget = new THREE.Vector3(0, 0, 0);
+const keys = {};
+
+// ---- INIT ----
+function init() {
+    // Escena
+    scene = new THREE.Scene();
+
+    // Cámara isométrica
+    camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 1000);
+    updateCamera();
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    composer = new THREE.EffectComposer(renderer);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+    bloomPass = new THREE.UnrealBloomPass(
+        new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.4, 0.9
+    );
+    composer.addPass(bloomPass);
+
+    // Luces
+    ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(ambientLight);
+    sunLight = new THREE.DirectionalLight(0xfff5e0, 1.5);
+    sunLight.position.set(20, 40, 20);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 0.1;
+    sunLight.shadow.camera.far = 400;
+    sunLight.shadow.camera.left = -100;
+    sunLight.shadow.camera.right = 100;
+    sunLight.shadow.camera.top = 100;
+    sunLight.shadow.camera.bottom = -100;
+    scene.add(sunLight);
+
+    // Suelo — tamaño exacto de la ciudad + margen, ligeramente bajo los tiles
+    const cityW = MAP[0].length * TILE + 20;
+    const cityH = MAP.length * TILE + 20;
+    groundMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(cityW, cityH),
+        new THREE.MeshLambertMaterial({ color: 0x6b8f4e })
+    );
+    groundMesh.rotation.x = -Math.PI / 2;
+    groundMesh.position.y = -0.05; // ligeramente bajo para evitar z-fighting
+    groundMesh.receiveShadow = true;
+    scene.add(groundMesh);
+
+    // Lluvia (invisible hasta modo neon)
+    createRain();
+
+    // Eventos
+    window.addEventListener('resize', onResize);
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('wheel', e => {
+        e.preventDefault();
+        if (carFollowCam) {
+            // En modo chase: zoom relativo al auto (rango 6–60)
+            carChaseZoom = Math.max(6, Math.min(60, carChaseZoom + e.deltaY * 0.05));
+        } else {
+            camDist = Math.max(20, Math.min(120, camDist + e.deltaY * 0.08));
+            camHeight = camDist * 0.73;
+        }
+    }, { passive: false });
+
+    // Cargar modelos y construir ciudad
+    loadAllModels();
+}
+
+// ---- CARGA DE MODELOS ----
+const MODEL_LIST = [
+    'road-straight', 'road-corner', 'road-intersection', 'road-split',
+    'road-straight-lightposts', 'building-small-a', 'building-small-b',
+    'building-small-c', 'building-small-d', 'building-garage',
+    'pavement', 'pavement-fountain', 'grass', 'grass-trees', 'grass-trees-tall'
+];
+
+function loadAllModels() {
+    const loader = new THREE.GLTFLoader();
+    let loaded = 0;
+
+    MODEL_LIST.forEach(name => {
+        loader.load(
+            `assets/models/${name}.glb`,
+            (gltf) => {
+                loadedModels[name] = gltf.scene;
+                // Habilitar sombras en todos los meshes
+                gltf.scene.traverse(child => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+                loaded++;
+                const pct = Math.round((loaded / MODEL_LIST.length) * 100);
+                document.getElementById('loading-bar').style.width = pct + '%';
+                document.getElementById('loading-text').textContent = `CARGANDO... ${name.toUpperCase()}`;
+
+                if (loaded === MODEL_LIST.length) {
+                    document.getElementById('loading-text').textContent = 'CONSTRUYENDO CIUDAD...';
+                    setTimeout(() => {
+                        buildCity();
+                        hideLoading();
+                        animate();
+                    }, 300);
+                }
+            },
+            undefined,
+            (err) => {
+                console.warn(`No se pudo cargar ${name}:`, err);
+                loaded++;
+                const pct = Math.round((loaded / MODEL_LIST.length) * 100);
+                document.getElementById('loading-bar').style.width = pct + '%';
+                if (loaded === MODEL_LIST.length) {
+                    buildCity();
+                    hideLoading();
+                    animate();
+                }
+            }
+        );
+    });
+}
+
+// ---- CONSTRUCCIÓN DE LA CIUDAD ----
+// Layout del mapa (1=intersección, 2=calle H, 3=calle V, 6=edificio, 7=parque, 8=garaje, 9=pizzería)
+// Ciudad 16×16 — calles en filas/columnas 0,5,10,15
+const MAP = [
+  //0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1], // row 0
+    [3, 9, 0, 0, 6, 3, 6, 0, 0, 6, 3, 6, 0, 0, 6, 3], // row 1  ← pizzería (1,1)
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 2
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 3
+    [3, 6, 0, 0, 6, 3, 7, 0, 0, 6, 3, 6, 0, 0, 8, 3], // row 4  ← garage (4,14)
+    [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1], // row 5
+    [3, 6, 0, 0, 6, 3, 6, 0, 0, 6, 3, 6, 0, 0, 6, 3], // row 6
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 7
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 8
+    [3, 6, 0, 0, 9, 3, 6, 0, 0, 6, 3, 7, 0, 0, 6, 3], // row 9  ← pizzería (9,4)
+    [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1], // row 10
+    [3, 6, 0, 0, 6, 3, 8, 0, 0, 6, 3, 6, 0, 0, 6, 3], // row 11 ← garage (11,6)
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 12
+    [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3], // row 13
+    [3, 6, 0, 0, 9, 3, 6, 0, 0, 6, 3, 6, 0, 0, 6, 3], // row 14 ← pizzería (14,4)
+    [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1], // row 15
+];
+
+const TILE = 16; // tamaño de cada celda (calles anchas, 2 carriles cómodos)
+const BUILDINGS = ['building-small-a', 'building-small-b', 'building-small-c', 'building-small-d'];
+
+function buildCity() {
+    cityGroup = new THREE.Group();
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+
+    MAP.forEach((row, z) => {
+        row.forEach((cell, x) => {
+            const px = offX + x * TILE + TILE / 2;
+            const pz = offZ + z * TILE + TILE / 2;
+
+            if (cell === 1) placeModel('road-intersection', px, 0, pz);
+            else if (cell === 2) placeModel('road-straight', px, 0, pz, Math.PI / 2); // horizontal E-W
+            else if (cell === 3) placeModel('road-straight', px, 0, pz, 0);            // vertical N-S
+            else if (cell === 4) placeModel('road-corner', px, 0, pz);
+            else if (cell === 5) placeModel('road-split', px, 0, pz);
+            else if (cell === 6) {
+                placeModel('pavement', px, 0, pz);
+                const bld = BUILDINGS[Math.floor(Math.random() * BUILDINGS.length)];
+                const bldGroup = placeModel(bld, px, 0, pz, Math.random() > 0.5 ? Math.PI / 2 : 0);
+                if (bldGroup) buildingMeshes[`${px},${pz}`] = bldGroup;
+            }
+            else if (cell === 7) {
+                placeModel('grass', px, 0, pz);
+                if (Math.random() > 0.4) placeModel('grass-trees', px, 0, pz, Math.random() * Math.PI * 2);
+            }
+            else if (cell === 8) {
+                placeModel('pavement', px, 0, pz);
+                placeModel('building-garage', px, 0, pz);
+            }
+            else if (cell === 9) {
+                placeModel('pavement', px, 0, pz);
+                buildPizzeriaBuilding(px, 0, pz);
+            }
+        });
+    });
+
+    // Añadir postes de luz en cruces clave
+    addLightPosts();
+
+    scene.add(cityGroup);
+
+    // Añadir luces de punto neon en la ciudad
+    addNeonLights();
+
+    // Crear auto de pizza
+    createPizzaCar();
+    // Flecha de navegación
+    createNavArrow();
+    ensureGroundDots();
+}
+
+function placeModel(name, x, y, z, rotY = 0, scale = TILE) {
+    if (!loadedModels[name]) return;
+    const clone = loadedModels[name].clone();
+    clone.position.set(x, y, z);
+    clone.rotation.y = rotY;
+    clone.scale.setScalar(scale);
+    clone.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+        }
+    });
+    cityGroup.add(clone);
+    return clone;
+}
+
+function addLightPosts() {
+    // Desactivado — postes cortaban la visibilidad al manejar
+}
+
+function addNeonLights() {
+    const neonColors = [0x00f2ff, 0xff00aa, 0xff6b00, 0x00ff88, 0xaa00ff];
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    // Luces en cada intersección
+    [0, 5, 10, 15].forEach((col, ci) => {
+        [0, 5, 10, 15].forEach((row, ri) => {
+            const px = offX + col * TILE + TILE / 2;
+            const pz = offZ + row * TILE + TILE / 2;
+            const light = new THREE.PointLight(
+                neonColors[(ci + ri) % neonColors.length], 0, 40
+            );
+            light.position.set(px, 5, pz);
+            scene.add(light);
+        });
+    });
+}
+
+// ---- PIZZERÍA (edificio custom) ----
+function buildPizzeriaBuilding(x, y, z) {
+    const group = new THREE.Group();
+
+    // Base del edificio — rojo pizzería
+    const bodyGeo = new THREE.BoxGeometry(4.5, 5, 4.5);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xcc2200 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.set(0, 2.5, 0);
+    body.castShadow = true;
+    group.add(body);
+
+    // Segundo piso más pequeño
+    const floor2Geo = new THREE.BoxGeometry(3.5, 2.5, 3.5);
+    const floor2Mat = new THREE.MeshLambertMaterial({ color: 0xdd3311 });
+    const floor2 = new THREE.Mesh(floor2Geo, floor2Mat);
+    floor2.position.set(0, 6.25, 0);
+    floor2.castShadow = true;
+    group.add(floor2);
+
+    // Techo triangular (techo de pizzería italiana)
+    const roofGeo = new THREE.ConeGeometry(3.2, 2, 4);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0xff5500 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(0, 8.5, 0);
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+    group.add(roof);
+
+    // Cartel luminoso "PIZZA" — caja plana en la fachada
+    const signGeo = new THREE.BoxGeometry(3.8, 1.0, 0.15);
+    const signMat = new THREE.MeshLambertMaterial({ color: 0xffee00, emissive: 0xffaa00, emissiveIntensity: 0.8 });
+    const sign = new THREE.Mesh(signGeo, signMat);
+    sign.position.set(0, 4.2, 2.33);
+    group.add(sign);
+
+    // Disco de pizza gigante en el cartel (círculo naranja con trozos)
+    const pizzaGeo = new THREE.CylinderGeometry(1.3, 1.3, 0.18, 8);
+    const pizzaMat = new THREE.MeshLambertMaterial({ color: 0xff9900, emissive: 0xff6600, emissiveIntensity: 0.5 });
+    const pizzaDisk = new THREE.Mesh(pizzaGeo, pizzaMat);
+    pizzaDisk.position.set(0, 5.5, 2.4);
+    pizzaDisk.rotation.x = Math.PI / 2;
+    group.add(pizzaDisk);
+
+    // Líneas de pizza (triángulos de queso)
+    for (let i = 0; i < 8; i++) {
+        const lineGeo = new THREE.BoxGeometry(0.06, 0.25, 1.2);
+        const lineMat = new THREE.MeshLambertMaterial({ color: 0xffdd00 });
+        const line = new THREE.Mesh(lineGeo, lineMat);
+        line.position.set(0, 5.62, 2.4);
+        line.rotation.y = (i / 8) * Math.PI * 2;
+        line.position.x += Math.sin(line.rotation.y) * 0.0;
+        group.add(line);
+    }
+
+    // Puerta
+    const doorGeo = new THREE.BoxGeometry(1.2, 2.0, 0.12);
+    const doorMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+    const door = new THREE.Mesh(doorGeo, doorMat);
+    door.position.set(0, 1.0, 2.32);
+    group.add(door);
+
+    // Ventanas (2 laterales)
+    [-1.5, 1.5].forEach(wx => {
+        const winGeo = new THREE.BoxGeometry(0.9, 1.0, 0.12);
+        const winMat = new THREE.MeshLambertMaterial({ color: 0x88ddff, emissive: 0x224466, emissiveIntensity: 0.3 });
+        const win = new THREE.Mesh(winGeo, winMat);
+        win.position.set(wx, 2.8, 2.32);
+        group.add(win);
+    });
+
+    // Luz de punto sobre la pizzería
+    const pizzaLight = new THREE.PointLight(0xff6600, 0, 15);
+    pizzaLight.position.set(0, 10, 0);
+    group.add(pizzaLight);
+    group.userData.pizzaLight = pizzaLight;
+
+    group.position.set(x, y, z);
+    cityGroup.add(group);
+    return group;
+}
+
+// ---- AUTO DE PIZZA ----
+let pizzaCar;
+// ---- FÍSICA DEL AUTO ----
+const carPhysics = {
+    speed: 0,           // velocidad actual
+    maxSpeed: 0.22,     // velocidad máxima
+    acceleration: 0.012,
+    braking: 0.018,
+    friction: 0.90,     // fricción (1 = sin fricción)
+    turnSpeed: 0.045,   // velocidad de giro
+    heading: 0,         // ángulo en radianes
+};
+let carFollowCam = true;
+let carChaseZoom = 22;
+
+// ---- SISTEMA DE PEDIDOS ----
+let money = 0;
+let deliveryCount = 0;
+let currentOrder = null;
+let orderMarkers = [];
+let lastOrderTime = 0;
+let gameTime = 0;
+let gameState = 'idle';  // 'idle' | 'playing' | 'gameover'
+let gameTimer = 60;      // cuenta regresiva 1 minuto
+let bestScore = parseInt(localStorage.getItem('sliceBest') || '0');
+let navArrow = null;
+let destBeacon = null;    // baliza 3D en el destino
+const buildingMeshes = {}; // mapa "x,z" → mesh group del edificio
+let highlightedBuilding = null; // edificio actualmente destacado
+let highlightedOriginalMats = []; // materiales originales para restaurar
+let groundPath = null;    // línea de puntos en el suelo
+const smokeParticles = [];  // partículas de humo en ruedas traseras
+let activeHazard = null;    // { type, meshes, data }
+let controlLocked = false;  // aceite bloquea steering
+let controlLockTimer = 0;
+const GROUND_DOTS = 12;   // cantidad de puntos en la ruta
+const ORDER_INTERVAL = 5;  // segundos sin pedido antes de generar uno nuevo
+
+// Posiciones de pizzerías en el MAP (row, col) → calculadas igual que buildCity
+function getPizzeriaPositions() {
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const positions = [];
+    MAP.forEach((row, rIdx) => {
+        row.forEach((cell, cIdx) => {
+            if (cell === 9) {
+                positions.push({
+                    x: offX + cIdx * TILE + TILE / 2,
+                    z: offZ + rIdx * TILE + TILE / 2,
+                    label: 'Pizzería'
+                });
+            }
+        });
+    });
+    return positions;
+}
+
+// Posiciones de entrega — edificios de orilla (cell=6, adyacentes a calle)
+// Retorna {x, z} del EDIFICIO (para destacar) y {roadX, roadZ} de la calle adyacente (para detección)
+// Entregas: edificios de esquina → punto de trigger en la INTERSECCIÓN adyacente
+function getDeliveryPositions() {
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const roadSet = new Set([0, 5, 10, 15]);
+    const positions = [];
+    MAP.forEach((row, rIdx) => {
+        row.forEach((cell, cIdx) => {
+            if (cell !== 6) return;
+            const adjUp = roadSet.has(rIdx - 1), adjDown = roadSet.has(rIdx + 1);
+            const adjLeft = roadSet.has(cIdx - 1), adjRight = roadSet.has(cIdx + 1);
+            if (!(adjUp || adjDown) || !(adjLeft || adjRight)) return;
+            // Intersección más cercana (AMBOS row y col son carreteras → tile tipo 1)
+            const intRow = adjUp ? rIdx - 1 : rIdx + 1;
+            const intCol = adjLeft ? cIdx - 1 : cIdx + 1;
+            positions.push({
+                x: offX + cIdx * TILE + TILE / 2,      // edificio (highlight)
+                z: offZ + rIdx * TILE + TILE / 2,
+                roadX: offX + intCol * TILE + TILE / 2, // intersección (trigger + beacon)
+                roadZ: offZ + intRow * TILE + TILE / 2
+            });
+        });
+    });
+    return positions;
+}
+
+function createMarker(x, z, type) {
+    // type: 'pickup' (verde) o 'delivery' (azul)
+    const group = new THREE.Group();
+
+    // Poste vertical
+    const poleGeo = new THREE.CylinderGeometry(0.2, 0.2, 6, 6);
+    const poleMat = new THREE.MeshPhongMaterial({
+        color: type === 'pickup' ? 0x00cc44 : 0x0088ff
+    });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 3;
+    group.add(pole);
+
+    // Esfera flotante encima
+    const sphereGeo = new THREE.SphereGeometry(1.2, 8, 8);
+    const sphereMat = new THREE.MeshPhongMaterial({
+        color: type === 'pickup' ? 0x00ff66 : 0x44aaff,
+        emissive: type === 'pickup' ? 0x004422 : 0x001144,
+        emissiveIntensity: 0.5
+    });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphere.position.y = 7;
+    group.add(sphere);
+
+    // Anillo giratorio
+    const ringGeo = new THREE.TorusGeometry(1.8, 0.2, 6, 12);
+    const ringMat = new THREE.MeshPhongMaterial({
+        color: type === 'pickup' ? 0x00ff44 : 0x0066ff
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.y = 7;
+    group.add(ring);
+    group.userData.ring = ring;
+    group.userData.sphere = sphere;
+    group.userData.baseY = 7;
+    group.userData.t = Math.random() * Math.PI * 2; // fase aleatoria del bobbing
+
+    group.position.set(x, 0, z);
+    scene.add(group);
+    orderMarkers.push(group);
+    return group;
+}
+
+function removeMarker(marker) {
+    if (!marker) return;
+    scene.remove(marker);
+    const idx = orderMarkers.indexOf(marker);
+    if (idx !== -1) orderMarkers.splice(idx, 1);
+    marker.traverse(c => { if (c.geometry) c.geometry.dispose(); });
+}
+
+function createNavArrow() {
+    const group = new THREE.Group();
+
+    // Cuerpo de la flecha (cono apuntando hacia adelante en Z+)
+    const coneGeo = new THREE.ConeGeometry(1.2, 2.8, 6);
+    const mat = new THREE.MeshPhongMaterial({
+        color: 0xffdd00,
+        emissive: 0x664400,
+        emissiveIntensity: 0.4,
+        shininess: 80
+    });
+    const cone = new THREE.Mesh(coneGeo, mat);
+    cone.rotation.x = -Math.PI / 2; // apunta hacia +Z por defecto
+    group.add(cone);
+
+    // Cola de la flecha
+    const tailGeo = new THREE.BoxGeometry(0.6, 0.6, 1.8);
+    const tail = new THREE.Mesh(tailGeo, mat);
+    tail.position.z = -1.8;
+    group.add(tail);
+
+    // Borde negro (outline sencillo, escala ligeramente mayor)
+    const outlineMat = new THREE.MeshPhongMaterial({ color: 0x000000, side: THREE.BackSide });
+    const outlineCone = new THREE.Mesh(coneGeo, outlineMat);
+    outlineCone.rotation.x = -Math.PI / 2;
+    outlineCone.scale.setScalar(1.18);
+    group.add(outlineCone);
+
+    group.visible = false;
+    scene.add(group);
+    navArrow = group;
+}
+
+function updateNavArrow() {
+    if (!navArrow || !pizzaCar) return;
+
+    // Determinar destino según estado del pedido
+    let target = null;
+    if (currentOrder?.state === 'waiting')  target = currentOrder.pickupPos;
+    if (currentOrder?.state === 'carrying') target = currentOrder.deliveryPos;
+
+    if (!target) {
+        navArrow.visible = false;
+        return;
+    }
+
+    navArrow.visible = true;
+
+    // Posición: flotando sobre el auto a altura fija
+    const height = 7;
+    navArrow.position.set(pizzaCar.position.x, height, pizzaCar.position.z);
+
+    // Rotar para apuntar al destino (en el plano XZ)
+    const dx = target.x - pizzaCar.position.x;
+    const dz = target.z - pizzaCar.position.z;
+    const angle = Math.atan2(dx, dz);
+    navArrow.rotation.y = angle;
+
+    // Bobbing suave
+    navArrow.position.y = height + Math.sin(gameTime * 3) * 0.4;
+
+    // Cambiar color según estado (verde=pickup, azul=delivery)
+    const color = currentOrder.state === 'waiting' ? 0x00ff66 : 0xffdd00;
+    navArrow.children.forEach(c => {
+        if (c.material && c.material.side !== THREE.BackSide) {
+            c.material.color.set(color);
+        }
+    });
+}
+
+// ---- SMOKE PARTICLES (ruedas traseras en turbo) ----
+function spawnSmoke(x, y, z) {
+    const geo = new THREE.SphereGeometry(0.18 + Math.random() * 0.18, 5, 5);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xcccccc, transparent: true, opacity: 0.7
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    // Velocidad aleatoria hacia atrás y arriba
+    mesh.userData.vx = (Math.random() - 0.5) * 0.08;
+    mesh.userData.vy = 0.04 + Math.random() * 0.04;
+    mesh.userData.vz = (Math.random() - 0.5) * 0.08;
+    mesh.userData.life = 1.0;
+    scene.add(mesh);
+    smokeParticles.push(mesh);
+}
+
+function updateSmoke(dt, turboActive) {
+    // Emitir desde ruedas traseras si turbo activo
+    if (turboActive && pizzaCar && Math.abs(carPhysics.speed) > carPhysics.maxSpeed * 0.6) {
+        const worldPos = new THREE.Vector3();
+        // Ruedas traseras = índices 2 y 3
+        [2, 3].forEach(idx => {
+            const wheel = pizzaCar.userData?.wheels?.[idx];
+            if (!wheel) return;
+            wheel.getWorldPosition(worldPos);
+            if (Math.random() < 0.6) spawnSmoke(worldPos.x, worldPos.y, worldPos.z);
+        });
+    }
+    // Actualizar partículas existentes
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+        const s = smokeParticles[i];
+        s.userData.life -= dt * 1.8;
+        s.position.x += s.userData.vx;
+        s.position.y += s.userData.vy;
+        s.position.z += s.userData.vz;
+        s.scale.setScalar(1 + (1 - s.userData.life) * 2);
+        s.material.opacity = s.userData.life * 0.5;
+        if (s.userData.life <= 0) {
+            scene.remove(s);
+            s.geometry.dispose();
+            smokeParticles.splice(i, 1);
+        }
+    }
+}
+
+// ---- DESTINATION BEACON (ring pulsante en el suelo) ----
+function createDestBeacon(x, z) {
+    removeDestBeacon();
+    const group = new THREE.Group();
+    group.position.set(x, 0.05, z);
+
+    // Anillo exterior pulsante
+    const ringGeo = new THREE.RingGeometry(3.5, 4.5, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xff6600, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    group.add(ring);
+
+    // Anillo interior (más pequeño)
+    const ring2Geo = new THREE.RingGeometry(1.5, 2.5, 32);
+    const ring2Mat = new THREE.MeshBasicMaterial({ color: 0xffaa00, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+    const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
+    ring2.rotation.x = -Math.PI / 2;
+    group.add(ring2);
+
+    // Flecha en el suelo apuntando hacia abajo (X)
+    const arrowGeo = new THREE.ConeGeometry(1.2, 2.5, 4);
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
+    const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+    arrow.position.y = 6;
+    arrow.rotation.x = Math.PI; // apunta hacia abajo
+    group.add(arrow);
+
+    group.userData = { t: 0, ring, ring2, arrow };
+    scene.add(group);
+    destBeacon = group;
+}
+
+function highlightBuilding(bx, bz) {
+    unhighlightBuilding();
+    const key = `${bx},${bz}`;
+    const bld = buildingMeshes[key];
+    if (!bld) return;
+    highlightedBuilding = bld;
+    highlightedOriginalMats = [];
+    bld.traverse(child => {
+        if (child.isMesh) {
+            highlightedOriginalMats.push({ mesh: child, mat: child.material });
+            child.material = child.material.clone();
+            child.material.color.set(0xff6600);
+            child.material.emissive = new THREE.Color(0xff3300);
+            child.material.emissiveIntensity = 0.6;
+        }
+    });
+}
+
+function unhighlightBuilding() {
+    if (!highlightedBuilding) return;
+    highlightedOriginalMats.forEach(({ mesh, mat }) => { mesh.material = mat; });
+    highlightedBuilding = null;
+    highlightedOriginalMats = [];
+}
+
+function removeDestBeacon() {
+    if (!destBeacon) return;
+    scene.remove(destBeacon);
+    destBeacon.traverse(c => { if (c.geometry) c.geometry.dispose(); });
+    destBeacon = null;
+}
+
+function updateDestBeacon(dt) {
+    if (!destBeacon) return;
+    destBeacon.userData.t += dt * 3;
+    const pulse = 0.7 + Math.abs(Math.sin(destBeacon.userData.t)) * 0.5;
+    destBeacon.userData.ring.material.opacity = 0.5 + Math.abs(Math.sin(destBeacon.userData.t)) * 0.4;
+    destBeacon.userData.ring2.material.opacity = 0.4 + Math.abs(Math.cos(destBeacon.userData.t)) * 0.4;
+    destBeacon.userData.ring.scale.setScalar(pulse);
+    destBeacon.userData.ring2.scale.setScalar(1.1 - (pulse - 0.7) * 0.5);
+    // Flecha baja y sube
+    destBeacon.userData.arrow.position.y = 5 + Math.sin(destBeacon.userData.t) * 1.2;
+}
+
+// ---- GROUND PATH (puntos en el suelo desde el auto al destino) ----
+const groundDots = [];
+
+function ensureGroundDots() {
+    while (groundDots.length < GROUND_DOTS) {
+        const geo = new THREE.CircleGeometry(0.5, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+        const dot = new THREE.Mesh(geo, mat);
+        dot.rotation.x = -Math.PI / 2;
+        dot.position.y = 0.08;
+        dot.visible = false;
+        scene.add(dot);
+        groundDots.push(dot);
+    }
+}
+
+function updateGroundPath() {
+    if (!pizzaCar) { groundDots.forEach(d => d.visible = false); return; }
+    let target = null;
+    if (currentOrder?.state === 'waiting')  target = currentOrder.pickupPos;
+    if (currentOrder?.state === 'carrying') target = currentOrder.deliveryPos;
+
+    if (!target) { groundDots.forEach(d => d.visible = false); return; }
+
+    const sx = pizzaCar.position.x;
+    const sz = pizzaCar.position.z;
+    const tx = target.x;
+    const tz = target.z;
+    const dist = Math.hypot(tx - sx, tz - sz);
+
+    // Espaciado entre puntos, empezar a 3 unidades del auto
+    const startOffset = 3;
+    const spacing = Math.max(2, (dist - startOffset) / (GROUND_DOTS));
+
+    const dotColor = currentOrder.state === 'waiting' ? 0x00ff88 : 0xff8800;
+
+    for (let i = 0; i < GROUND_DOTS; i++) {
+        const dot = groundDots[i];
+        const d = startOffset + i * spacing;
+        if (d >= dist) { dot.visible = false; continue; }
+        const t = d / dist;
+        dot.position.x = sx + (tx - sx) * t;
+        dot.position.z = sz + (tz - sz) * t;
+        dot.position.y = 0.08;
+        dot.material.color.setHex(dotColor);
+        // Pulsar opacidad alternada
+        dot.material.opacity = 0.5 + Math.abs(Math.sin(gameTime * 4 + i * 0.6)) * 0.4;
+        dot.visible = true;
+    }
+}
+
+// ---- SISTEMA DE HAZARDS ----
+function getRoadTiles() {
+    // Devuelve array de {x,z} de todos los tiles de calle
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const tiles = [];
+    MAP.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell === 1 || cell === 2 || cell === 3) {
+            tiles.push({ x: offX + c * TILE + TILE / 2, z: offZ + r * TILE + TILE / 2 });
+        }
+    }));
+    return tiles;
+}
+
+function showHazardMsg(msg, duration = 2.5) {
+    const el = document.getElementById('hazard-hud');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), duration * 1000);
+}
+
+function clearHazard() {
+    if (!activeHazard) return;
+    activeHazard.meshes.forEach(m => {
+        scene.remove(m);
+        m.traverse(c => { if (c.geometry) c.geometry.dispose(); });
+    });
+    activeHazard = null;
+    document.getElementById('hazard-hud')?.classList.remove('show');
+}
+
+// --- Evento 1: Cajas ---
+function spawnCones() {
+    const allRoad = getRoadTiles();
+    // Solo tiles cerca del auto (dentro de 5 tiles)
+    const carX = pizzaCar.position.x, carZ = pizzaCar.position.z;
+    const near = allRoad.filter(t => Math.hypot(t.x - carX, t.z - carZ) < TILE * 6 && Math.hypot(t.x - carX, t.z - carZ) > TILE);
+    const roadTiles = near.length >= 4 ? near : allRoad;
+    const meshes = [];
+    const coneData = [];
+    const count = 4 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+        const tile = roadTiles[Math.floor(Math.random() * roadTiles.length)];
+        const geo = new THREE.BoxGeometry(2.0, 2.0, 2.0);
+        const mat = new THREE.MeshPhongMaterial({ color: 0xff6600, emissive: 0xff2200, emissiveIntensity: 0.4 });
+        const box = new THREE.Mesh(geo, mat);
+        const ox = (Math.random() - 0.5) * (TILE * 0.5);
+        const oz = (Math.random() - 0.5) * (TILE * 0.5);
+        box.position.set(tile.x + ox, 0.6, tile.z + oz);
+        box.rotation.y = Math.random() * Math.PI;
+        scene.add(box);
+        meshes.push(box);
+        coneData.push({ mesh: box, hit: false });
+    }
+    activeHazard = { type: 'cones', meshes, data: coneData };
+    showHazardMsg('🚧 ¡OBSTÁCULOS EN LA RUTA!', 2.5);
+}
+
+// --- Evento 2: Aceite ---
+function spawnOil() {
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const allIntersections = [];
+    MAP.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell === 1) allIntersections.push({ x: offX + c * TILE + TILE / 2, z: offZ + r * TILE + TILE / 2 });
+    }));
+    // Preferir intersecciones cerca del auto
+    const carX = pizzaCar.position.x, carZ = pizzaCar.position.z;
+    const near = allIntersections.filter(t => Math.hypot(t.x - carX, t.z - carZ) < TILE * 5);
+    const intersections = near.length >= 2 ? near : allIntersections;
+    const meshes = [];
+    const oilData = [];
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+        const pt = intersections[Math.floor(Math.random() * intersections.length)];
+        const geo = new THREE.CircleGeometry(TILE * 0.35, 16);
+        const mat = new THREE.MeshBasicMaterial({ color: 0x220044, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+        const oil = new THREE.Mesh(geo, mat);
+        oil.rotation.x = -Math.PI / 2;
+        oil.position.set(pt.x, 0.06, pt.z);
+        scene.add(oil);
+        meshes.push(oil);
+        oilData.push({ mesh: oil, x: pt.x, z: pt.z });
+    }
+    activeHazard = { type: 'oil', meshes, data: oilData };
+    showHazardMsg('🛢️ ¡CUIDADO CON EL ACEITE!', 2.5);
+}
+
+// --- Evento 3: Moto ladrona ---
+function createMotoMesh() {
+    const group = new THREE.Group();
+    // Cuerpo
+    const bodyGeo = new THREE.BoxGeometry(0.7, 0.6, 1.8);
+    const bodyMat = new THREE.MeshPhongMaterial({ color: 0xcc0000, emissive: 0x440000, emissiveIntensity: 0.5 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.7;
+    group.add(body);
+    // Ruedas
+    const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 10);
+    const wMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+    [-0.85, 0.85].forEach(wz => {
+        const w = new THREE.Mesh(wGeo, wMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(0, 0.35, wz);
+        group.add(w);
+    });
+    // Rider (cabeza)
+    const headGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    const headMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.set(0, 1.4, -0.3);
+    group.add(head);
+    return group;
+}
+
+function spawnMoto() {
+    const roadTiles = getRoadTiles();
+    const carPos = pizzaCar.position;
+    // Elegir tile a 3-6 tiles de distancia (visible pero no encima)
+    const far = roadTiles.filter(t => { const d = Math.hypot(t.x - carPos.x, t.z - carPos.z); return d > TILE*3 && d < TILE*7; });
+    const spawnTile = (far.length ? far : roadTiles)[Math.floor(Math.random() * (far.length || roadTiles.length))];
+    const motoMesh = createMotoMesh();
+    motoMesh.position.set(spawnTile.x, 0, spawnTile.z);
+    scene.add(motoMesh);
+    activeHazard = {
+        type: 'moto', meshes: [motoMesh],
+        data: { mesh: motoMesh, x: spawnTile.x, z: spawnTile.z, heading: 0, speed: 0.15 }
+    };
+    showHazardMsg('🏍️ ¡LADRÓN EN MOTO! ¡ESCAPA!', 3);
+}
+
+function spawnHazard() {
+    const roll = Math.random();
+    if (roll < 0.4)      spawnCones();
+    else if (roll < 0.7) spawnOil();
+    else                 spawnMoto();
+}
+
+function updateHazard(dt) {
+    if (!activeHazard || !pizzaCar) return;
+    const carX = pizzaCar.position.x;
+    const carZ = pizzaCar.position.z;
+    const h = activeHazard;
+
+    if (h.type === 'cones') {
+        h.data.forEach(cone => {
+            if (cone.hit) return;
+            const dist = Math.hypot(carX - cone.mesh.position.x, carZ - cone.mesh.position.z);
+            if (dist < 2.0) {
+                cone.hit = true;
+                carPhysics.speed *= -0.4;
+                carPhysics.heading += (Math.random() - 0.5) * 1.0;
+                scene.remove(cone.mesh);
+                showHazardMsg('💥 ¡GOLPE!', 1.2);
+            } else {
+                // Bobbing
+                cone.mesh.rotation.y += dt * 1.5;
+            }
+        });
+
+    } else if (h.type === 'oil') {
+        if (!controlLocked) {
+            h.data.forEach(oil => {
+                const dist = Math.hypot(carX - oil.x, carZ - oil.z);
+                if (dist < TILE * 0.38) {
+                    controlLocked = true;
+                    controlLockTimer = 2.5;
+                    showHazardMsg('⚠️ ¡ACEITE! PERDISTE EL CONTROL', 2.5);
+                }
+            });
+        }
+        // Efecto iridiscente
+        const hue = (gameTime * 80) % 360;
+        h.data.forEach(oil => {
+            oil.mesh.material.color.setHSL(hue / 360, 1, 0.3);
+        });
+
+    } else if (h.type === 'moto') {
+        const d = h.data;
+        const offX = -(MAP[0].length * TILE) / 2;
+        const offZ = -(MAP.length * TILE) / 2;
+        function tileAtWorld(x, z) {
+            const c = Math.floor((x - offX) / TILE);
+            const r = Math.floor((z - offZ) / TILE);
+            if (r < 0 || r >= MAP.length || c < 0 || c >= MAP[0].length) return -1;
+            return MAP[r][c];
+        }
+        // IA: rotar hacia el auto
+        const targetAngle = Math.atan2(carX - d.x, carZ - d.z);
+        let da = targetAngle - d.heading;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        d.heading += da * 0.08;
+        // Mover con slide (igual que el auto)
+        const nx = d.x + Math.sin(d.heading) * d.speed;
+        const nz = d.z + Math.cos(d.heading) * d.speed;
+        const isRoad = t => t===1||t===2||t===3;
+        if (isRoad(tileAtWorld(nx, nz)))       { d.x = nx; d.z = nz; }
+        else if (isRoad(tileAtWorld(nx, d.z))) { d.x = nx; }
+        else if (isRoad(tileAtWorld(d.x, nz))) { d.z = nz; }
+        d.mesh.position.set(d.x, 0, d.z);
+        d.mesh.rotation.y = d.heading;
+        // Ruedas giran
+        d.mesh.children.forEach(c => {
+            if (c.geometry?.type === 'CylinderGeometry') c.rotation.x += d.speed * 3;
+        });
+        // Colisión
+        if (Math.hypot(carX - d.x, carZ - d.z) < 2.8) {
+            // Pedido robado
+            if (currentOrder?.state === 'carrying') {
+                removeMarker(currentOrder.deliveryMarker);
+                removeDestBeacon();
+                unhighlightBuilding();
+                currentOrder = null;
+                lastOrderTime = gameTime;
+                showHazardMsg('💀 ¡TE ROBARON LA PIZZA!', 3.5);
+                clearHazard();
+            }
+        }
+    }
+}
+
+function spawnOrder() {
+    if (currentOrder) return; // ya hay uno activo
+
+    const pizzerias = getPizzeriaPositions();
+    const deliveries = getDeliveryPositions();
+    if (!pizzerias.length || !deliveries.length) return;
+
+    const pickup = pizzerias[Math.floor(Math.random() * pizzerias.length)];
+    // Elegir destino lejos del pickup (mínimo 3 tiles)
+    const far = deliveries.filter(d =>
+        Math.abs(d.x - pickup.x) + Math.abs(d.z - pickup.z) > TILE * 3
+    );
+    const delivery = (far.length ? far : deliveries)[Math.floor(Math.random() * (far.length || deliveries.length))];
+
+    const dist = Math.hypot(delivery.x - pickup.x, delivery.z - pickup.z);
+    const timeLimit = Math.max(20, Math.round(dist * 0.8));
+    const reward = Math.round(50 + dist * 1.5);
+
+    currentOrder = {
+        state: 'waiting', // waiting → carrying → done
+        pickupPos: pickup,
+        deliveryPos: { x: delivery.roadX, z: delivery.roadZ }, // posición en la calle (para detección + beacon)
+        buildingPos: { x: delivery.x, z: delivery.z },         // posición del edificio (para highlight)
+        timeLeft: timeLimit,
+        timeLimit,
+        reward,
+        pickupMarker: createMarker(pickup.x, pickup.z, 'pickup'),
+        deliveryMarker: null // se crea al recoger
+    };
+
+    updateOrderHUD();
+}
+
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('gameover-screen').style.display = 'none';
+    document.getElementById('order-hud').style.display = 'block';
+    document.getElementById('game-hud').style.display = 'flex';
+    document.getElementById('best-display').textContent = bestScore;
+    Music.start();
+    // Reset state
+    money = 0; deliveryCount = 0; gameTimer = 60; gameTime = 0;
+    gameState = 'playing';
+    currentOrder = null; clearHazard(); controlLocked = false;
+    orderMarkers.forEach(m => scene.remove(m)); orderMarkers = [];
+    removeDestBeacon(); unhighlightBuilding();
+    lastOrderTime = -99; // forzar spawn inmediato
+    updateGameHUD();
+}
+
+function endGame() {
+    gameState = 'gameover';
+    clearHazard(); controlLocked = false;
+    if (currentOrder) { removeMarker(currentOrder.deliveryMarker); removeDestBeacon(); unhighlightBuilding(); currentOrder = null; }
+    if (deliveryCount > bestScore) {
+        bestScore = deliveryCount;
+        localStorage.setItem('sliceBest', bestScore);
+    }
+    document.getElementById('order-hud').style.display = 'none';
+    document.getElementById('game-hud').style.display = 'none';
+    document.getElementById('gameover-score').textContent = `🍕 ${deliveryCount} pizza${deliveryCount !== 1 ? 's' : ''} entregada${deliveryCount !== 1 ? 's' : ''}`;
+    document.getElementById('gameover-best').textContent = deliveryCount >= bestScore ? '🏆 ¡NUEVO RÉCORD!' : `🏆 Mejor: ${bestScore}`;
+    document.getElementById('gameover-screen').style.display = 'flex';
+    Music.stop();
+}
+
+function updateGameHUD() {
+    const cd = document.getElementById('countdown-display');
+    const dc = document.getElementById('delivery-count');
+    const t = Math.ceil(gameTimer);
+    if (cd) { cd.textContent = t; cd.className = t <= 10 ? 'urgent' : ''; }
+    if (dc) dc.textContent = deliveryCount;
+}
+
+function updateOrderHUD() {
+    const statusEl = document.getElementById('order-status');
+    const timerEl  = document.getElementById('order-timer');
+    const destEl   = document.getElementById('order-dest');
+
+    if (!currentOrder) {
+        statusEl.textContent = '🍕 Buscando pedido...';
+        timerEl.textContent = '';
+        destEl.textContent = '';
+        return;
+    }
+    if (currentOrder.state === 'waiting') {
+        statusEl.textContent = '📍 Ve a recoger la pizza';
+        timerEl.textContent = '';
+        destEl.textContent = '→ Dirígete al marcador VERDE';
+    } else if (currentOrder.state === 'carrying') {
+        const t = Math.ceil(currentOrder.timeLeft);
+        statusEl.textContent = '🚗 ¡Entrega en camino!';
+        timerEl.textContent = `⏱ ${t}s`;
+        timerEl.className = t <= 8 ? 'urgent' : '';
+        destEl.textContent = `💰 +$${currentOrder.reward} al entregar`;
+    }
+}
+
+function updateMoneyHUD() {
+    const el = document.getElementById('money-display');
+    if (el) el.textContent = money;
+}
+
+function updateOrders(dt) {
+    gameTime += dt;
+    if (gameState !== 'playing') return;
+
+    // Countdown del juego
+    gameTimer -= dt;
+    updateGameHUD();
+    if (gameTimer <= 0) { endGame(); return; }
+
+    // Generar pedido si no hay ninguno (inmediato en modo 1 min)
+    if (!currentOrder) {
+        if (gameTime - lastOrderTime > 0.5) {
+            spawnOrder();
+            lastOrderTime = gameTime;
+        }
+        return;
+    }
+
+    // Bobbing + rotación de marcadores
+    orderMarkers.forEach(m => {
+        m.userData.t += dt * 2;
+        if (m.userData.sphere) {
+            m.userData.sphere.position.y = m.userData.baseY + Math.sin(m.userData.t) * 0.5;
+        }
+        if (m.userData.ring) {
+            m.userData.ring.rotation.y += dt * 1.5;
+            m.userData.ring.position.y = m.userData.baseY + Math.sin(m.userData.t) * 0.5;
+        }
+    });
+
+    const carX = pizzaCar.position.x;
+    const carZ = pizzaCar.position.z;
+    const PICKUP_RADIUS = TILE * 1.4;
+
+    if (currentOrder.state === 'waiting') {
+        // Chequear si llegó a la pizzería
+        const dx = carX - currentOrder.pickupPos.x;
+        const dz = carZ - currentOrder.pickupPos.z;
+        if (Math.hypot(dx, dz) < PICKUP_RADIUS) {
+            // Recoger pizza
+            removeMarker(currentOrder.pickupMarker);
+            currentOrder.pickupMarker = null;
+            currentOrder.state = 'carrying';
+            currentOrder.deliveryMarker = createMarker(
+                currentOrder.deliveryPos.x,
+                currentOrder.deliveryPos.z,
+                'delivery'
+            );
+            createDestBeacon(currentOrder.deliveryPos.x, currentOrder.deliveryPos.z);
+            highlightBuilding(currentOrder.buildingPos.x, currentOrder.buildingPos.z);
+            if (!activeHazard) setTimeout(spawnHazard, 1200);
+            updateOrderHUD();
+        }
+
+    } else if (currentOrder.state === 'carrying') {
+        // Countdown
+        currentOrder.timeLeft -= dt;
+        updateOrderHUD();
+
+        if (currentOrder.timeLeft <= 0) {
+            // Pedido fallido
+            removeMarker(currentOrder.deliveryMarker);
+            removeDestBeacon();
+            unhighlightBuilding();
+            clearHazard(); controlLocked = false;
+            currentOrder = null;
+            lastOrderTime = gameTime;
+            document.getElementById('order-status').textContent = '❌ ¡Pedido fallido! Tiempo agotado';
+            document.getElementById('order-timer').textContent = '';
+            setTimeout(() => updateOrderHUD(), 2000);
+            return;
+        }
+
+        // Chequear si llegó al cliente
+        const dx = carX - currentOrder.deliveryPos.x;
+        const dz = carZ - currentOrder.deliveryPos.z;
+        if (Math.hypot(dx, dz) < PICKUP_RADIUS) {
+            // Entrega exitosa
+            money += currentOrder.reward;
+            deliveryCount++;
+            removeMarker(currentOrder.deliveryMarker);
+            removeDestBeacon();
+            unhighlightBuilding();
+            clearHazard(); controlLocked = false;
+            currentOrder = null;
+            lastOrderTime = gameTime;
+            updateMoneyHUD();
+            document.getElementById('order-status').textContent = '✅ ¡Entregado! Nuevo pedido pronto...';
+            document.getElementById('order-timer').textContent = '';
+            // Pop animación en el score
+            const scoreEl = document.getElementById('score-hud');
+            scoreEl.classList.remove('pop');
+            void scoreEl.offsetWidth;
+            scoreEl.classList.add('pop');
+        }
+    }
+}
+
+function createPizzaCar() {
+    const car = new THREE.Group();
+
+    // Carrocería — caja roja estilo retro
+    const bodyGeo = new THREE.BoxGeometry(1.8, 0.7, 3.0);
+    const bodyMat = new THREE.MeshPhongMaterial({ color: 0xcc1100, shininess: 80 });
+    const carBody = new THREE.Mesh(bodyGeo, bodyMat);
+    carBody.position.set(0, 0.6, 0);
+    carBody.castShadow = true;
+    car.add(carBody);
+
+    // Cabina (parte alta)
+    const cabinGeo = new THREE.BoxGeometry(1.5, 0.55, 1.6);
+    const cabinMat = new THREE.MeshPhongMaterial({ color: 0xbb1000, shininess: 80 });
+    const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+    cabin.position.set(0, 1.22, -0.1);
+    cabin.castShadow = true;
+    car.add(cabin);
+
+    // Parabrisas (cristal azul)
+    const windGeo = new THREE.BoxGeometry(1.42, 0.45, 0.08);
+    const windMat = new THREE.MeshPhongMaterial({ color: 0x4488bb, transparent: true, opacity: 0.75, shininess: 120 });
+    const wind = new THREE.Mesh(windGeo, windMat);
+    wind.position.set(0, 1.22, 0.72);
+    car.add(wind);
+
+    // DISCO DE PIZZA en el techo — ¡el elemento icónico!
+    const pizzaGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.2, 8);
+    const pizzaMat = new THREE.MeshPhongMaterial({ color: 0xee8800, emissive: 0x441100, emissiveIntensity: 0.3, shininess: 40 });
+    const pizza = new THREE.Mesh(pizzaGeo, pizzaMat);
+    pizza.position.set(0, 1.7, 0);
+    car.add(pizza);
+
+    // Borde de la pizza (costra dorada)
+    const crustGeo = new THREE.TorusGeometry(1.1, 0.14, 8, 12);
+    const crustMat = new THREE.MeshPhongMaterial({ color: 0xaa6600, shininess: 30 });
+    const crust = new THREE.Mesh(crustGeo, crustMat);
+    crust.position.set(0, 1.8, 0);
+    car.add(crust);
+
+    // Líneas de pizza (cortes en 8 porciones)
+    for (let i = 0; i < 8; i++) {
+        const sliceGeo = new THREE.BoxGeometry(0.05, 0.26, 1.0);
+        const sliceMat = new THREE.MeshPhongMaterial({ color: 0xddbb00, shininess: 20 });
+        const slice = new THREE.Mesh(sliceGeo, sliceMat);
+        const angle = (i / 8) * Math.PI * 2;
+        slice.position.set(Math.sin(angle) * 0.4, 1.82, Math.cos(angle) * 0.4);
+        slice.rotation.y = angle;
+        car.add(slice);
+    }
+
+    // Pepperoni (círculos rojos sobre la pizza)
+    for (let i = 0; i < 6; i++) {
+        const pepGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.06, 8);
+        const pepMat = new THREE.MeshPhongMaterial({ color: 0x990000, shininess: 20 });
+        const pep = new THREE.Mesh(pepGeo, pepMat);
+        const a = (i / 6) * Math.PI * 2;
+        pep.position.set(Math.sin(a) * 0.65, 1.82, Math.cos(a) * 0.65);
+        car.add(pep);
+    }
+
+    // Ruedas (4 cilindros negros)
+    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.28, 12);
+    const wheelMat = new THREE.MeshPhongMaterial({ color: 0x222222, shininess: 60 });
+    car.userData.wheels = [];
+    [[-1.05, 0.35, 1.0], [1.05, 0.35, 1.0], [-1.05, 0.35, -1.0], [1.05, 0.35, -1.0]].forEach(([wx, wy, wz]) => {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(wx, wy, wz);
+        car.add(wheel);
+        car.userData.wheels.push(wheel);
+    });
+
+    // Faros delanteros (sin emissive excesivo)
+    [[-0.55, 0.62, 1.52], [0.55, 0.62, 1.52]].forEach(([lx, ly, lz]) => {
+        const lightGeo = new THREE.BoxGeometry(0.35, 0.2, 0.08);
+        const lightMat = new THREE.MeshPhongMaterial({ color: 0xffffcc, emissive: 0xaaaa00, emissiveIntensity: 0.2 });
+        const headlight = new THREE.Mesh(lightGeo, lightMat);
+        headlight.position.set(lx, ly, lz);
+        car.add(headlight);
+    });
+
+    // Luz del carro (headlight point light)
+    const carLight = new THREE.PointLight(0xffff88, 0, 10);
+    carLight.position.set(0, 0.8, 2);
+    car.add(carLight);
+    car.userData.headlight = carLight;
+
+    // Escala del auto (relativa a la ciudad — calles son TILE=6 unidades)
+    car.scale.setScalar(1.4);
+
+    scene.add(car);
+    pizzaCar = car;
+
+    // Definir ruta circular por las calles
+    // Posiciones en el grid de calles (usando coordenadas mundo)
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+    const T = TILE;
+    // Ruta: sigue el anillo exterior de calles + algunas internas
+    carPath = [
+        // Calle superior (row 0) de izquierda a derecha
+        [offX + 1*T + T/2, 0, offZ + 0*T + T/2],
+        [offX + 2*T + T/2, 0, offZ + 0*T + T/2],
+        [offX + 3*T + T/2, 0, offZ + 0*T + T/2],
+        [offX + 4*T + T/2, 0, offZ + 0*T + T/2],
+        [offX + 5*T + T/2, 0, offZ + 0*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 0*T + T/2],
+        // Bajando por columna derecha (col 6, rows 0-7)
+        [offX + 6*T + T/2, 0, offZ + 1*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 2*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 3*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 4*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 5*T + T/2],
+        [offX + 6*T + T/2, 0, offZ + 6*T + T/2],
+        // Calle inferior (row 7) de derecha a izquierda
+        [offX + 5*T + T/2, 0, offZ + 7*T + T/2],
+        [offX + 4*T + T/2, 0, offZ + 7*T + T/2],
+        [offX + 3*T + T/2, 0, offZ + 7*T + T/2],
+        [offX + 2*T + T/2, 0, offZ + 7*T + T/2],
+        [offX + 1*T + T/2, 0, offZ + 7*T + T/2],
+        // Subiendo por columna izquierda
+        [offX + 0*T + T/2, 0, offZ + 6*T + T/2],
+        [offX + 0*T + T/2, 0, offZ + 5*T + T/2],
+        [offX + 0*T + T/2, 0, offZ + 4*T + T/2],
+        [offX + 0*T + T/2, 0, offZ + 3*T + T/2],
+        [offX + 0*T + T/2, 0, offZ + 2*T + T/2],
+        [offX + 0*T + T/2, 0, offZ + 1*T + T/2],
+    ];
+
+    // Posición inicial — calle superior izquierda (row 0, entre col 0 y 5)
+    const startOffX = -(MAP[0].length * TILE) / 2;
+    const startOffZ = -(MAP.length * TILE) / 2;
+    car.position.set(startOffX + 2 * TILE + TILE / 2, 0.35, startOffZ + 0 * TILE + TILE / 2);
+    carPhysics.heading = Math.PI / 2; // mirando hacia la derecha
+    car.rotation.y = carPhysics.heading;
+}
+
+function updatePizzaCar() {
+    if (!pizzaCar) return;
+    const p = carPhysics;
+
+    // --- INPUT ---
+    const accel = keys['KeyW'] || keys['ArrowUp'];
+    const brake = keys['KeyS'] || keys['ArrowDown'];
+    const left  = keys['KeyA'] || keys['ArrowLeft'];
+    const right = keys['KeyD'] || keys['ArrowRight'];
+    const turbo = keys['ShiftLeft'] || keys['ShiftRight'];
+
+    // --- TURBO ---
+    const turboMax  = p.maxSpeed * 2.2;
+    const turboAccel = p.acceleration * 2.8;
+    const effectiveMax   = turbo ? turboMax  : p.maxSpeed;
+    const effectiveAccel = turbo ? turboAccel : p.acceleration;
+
+
+    // --- VELOCIDAD ---
+    if (accel) {
+        p.speed += effectiveAccel;
+        if (p.speed > effectiveMax) p.speed = effectiveMax;
+    } else if (brake) {
+        p.speed -= p.braking;
+        if (p.speed < -p.maxSpeed * 0.5) p.speed = -p.maxSpeed * 0.5;
+    } else {
+        p.speed *= p.friction;
+        if (Math.abs(p.speed) < 0.0005) p.speed = 0;
+    }
+
+    // --- GIRO proporcional a velocidad ---
+    const velFactor = Math.min(Math.abs(p.speed) / p.maxSpeed, 1);
+    if (controlLocked) {
+        // Aceite: derrape incontrolable
+        p.heading += Math.sin(gameTime * 9) * 0.05;
+    } else if (velFactor > 0.05) {
+        const dir = p.speed >= 0 ? 1 : -1;
+        if (left)  p.heading += p.turnSpeed * dir * velFactor;
+        if (right) p.heading -= p.turnSpeed * dir * velFactor;
+    }
+
+    // --- MOVIMIENTO con slide en colisiones ---
+    const nx = pizzaCar.position.x + Math.sin(p.heading) * p.speed;
+    const nz = pizzaCar.position.z + Math.cos(p.heading) * p.speed;
+
+    const offX = -(MAP[0].length * TILE) / 2;
+    const offZ = -(MAP.length * TILE) / 2;
+
+    function tileAt(x, z) {
+        const c = Math.floor((x - offX) / TILE);
+        const r = Math.floor((z - offZ) / TILE);
+        if (r < 0 || r >= MAP.length || c < 0 || c >= MAP[0].length) return -1;
+        return MAP[r][c];
+    }
+    function isRoadTile(t) { return t === 1 || t === 2 || t === 3; }
+
+    const canMoveFull = isRoadTile(tileAt(nx, nz));
+    const canMoveX    = isRoadTile(tileAt(nx, pizzaCar.position.z));
+    const canMoveZ    = isRoadTile(tileAt(pizzaCar.position.x, nz));
+
+    if (canMoveFull) {
+        pizzaCar.position.x = nx;
+        pizzaCar.position.z = nz;
+    } else if (canMoveX) {
+        pizzaCar.position.x = nx;
+        p.speed *= 0.85;
+    } else if (canMoveZ) {
+        pizzaCar.position.z = nz;
+        p.speed *= 0.85;
+    } else {
+        p.speed *= -0.25;
+    }
+
+    pizzaCar.position.y = 0.35;
+    pizzaCar.rotation.y = p.heading;
+
+    // Rotar disco de pizza
+    const pizzaDisk = pizzaCar.children.find(c => c.geometry && c.geometry.type === 'CylinderGeometry' && c.position.y > 1.5);
+    if (pizzaDisk) pizzaDisk.rotation.y += p.speed * (turbo ? 2.5 : 0.8);
+
+    // HUD turbo
+    const turboEl = document.getElementById('turbo-hud');
+    if (turboEl) turboEl.classList.toggle('active', turbo && Math.abs(p.speed) > p.maxSpeed * 0.5);
+
+    // Headlights
+    if (pizzaCar.userData.headlight) {
+        pizzaCar.userData.headlight.intensity = (currentStyle !== 'classic') ? 1.5 : 0;
+    }
+
+    // --- CÁMARA CHASE suavizada ---
+    if (carFollowCam) {
+        camTarget.x += (pizzaCar.position.x - camTarget.x) * 0.12;
+        camTarget.z += (pizzaCar.position.z - camTarget.z) * 0.12;
+        // Normalizar diferencia de ángulo
+        let targetAngle = p.heading + Math.PI;
+        let da = targetAngle - camAngle;
+        while (da >  Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        camAngle += da * 0.08;
+        camDist   = carChaseZoom;
+        camHeight = carChaseZoom * 0.9;
+    }
+}
+
+// ---- LLUVIA ----
+function createRain() {
+    const geo = new THREE.BufferGeometry();
+    const count = 2000;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 100;
+        positions[i * 3 + 1] = Math.random() * 40;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+        color: 0x88ccff, size: 0.08,
+        transparent: true, opacity: 0
+    });
+    const rainMesh = new THREE.Points(geo, mat);
+    scene.add(rainMesh);
+    rain.push(rainMesh);
+}
+
+function updateRain() {
+    rain.forEach(r => {
+        const pos = r.geometry.attributes.position.array;
+        for (let i = 1; i < pos.length; i += 3) {
+            pos[i] -= 0.3;
+            if (pos[i] < -2) pos[i] = 40;
+        }
+        r.geometry.attributes.position.needsUpdate = true;
+    });
+}
+
+// ---- ESTILOS VISUALES ----
+function setStyle(name) {
+    currentStyle = name;
+    const s = STYLES[name];
+
+    // Fondo y niebla
+    scene.background = new THREE.Color(s.bg);
+    scene.fog = new THREE.Fog(s.fog.color, s.fog.near, s.fog.far);
+
+    // Luces
+    ambientLight.color.set(s.ambient.color);
+    ambientLight.intensity = s.ambient.intensity;
+    sunLight.color.set(s.sun.color);
+    sunLight.intensity = s.sun.intensity;
+    sunLight.position.set(...s.sun.pos);
+
+    // Bloom
+    bloomPass.strength = s.bloom.strength;
+    bloomPass.radius = s.bloom.radius;
+    bloomPass.threshold = s.bloom.threshold;
+
+    // Suelo
+    groundMesh.material.color.set(s.ground);
+
+    // Lluvia — solo en modo nublado
+    const rainOpacity = (name === 'sunset') ? 0.4 : 0;
+    rain.forEach(r => r.material.opacity = rainOpacity);
+
+    // Luces de punto — apagadas siempre (sin neon)
+    scene.traverse(obj => {
+        if (obj.isPointLight) obj.intensity = 0;
+    });
+
+    // UI
+    document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`btn-${name}`).classList.add('active');
+}
+
+// ---- CÁMARA ----
+function updateCamera() {
+    const x = camTarget.x + Math.sin(camAngle) * camDist;
+    const z = camTarget.z + Math.cos(camAngle) * camDist;
+    camera.position.set(x, camHeight, z);
+    camera.lookAt(camTarget);
+}
+
+function handleInput() {
+    // En modo cámara libre, WASD mueve la cámara; en chase lo maneja updatePizzaCar
+    if (!carFollowCam) {
+        const speed = 0.15;
+        const right = new THREE.Vector3(Math.cos(camAngle), 0, -Math.sin(camAngle));
+        const forward = new THREE.Vector3(-Math.sin(camAngle), 0, -Math.cos(camAngle));
+        if (keys['KeyW'] || keys['ArrowUp'])    camTarget.addScaledVector(forward, -speed);
+        if (keys['KeyS'] || keys['ArrowDown'])  camTarget.addScaledVector(forward, speed);
+        if (keys['KeyA'] || keys['ArrowLeft'])  camTarget.addScaledVector(right, -speed);
+        if (keys['KeyD'] || keys['ArrowRight']) camTarget.addScaledVector(right, speed);
+    }
+    if (keys['KeyQ']) camAngle += 0.01;
+    if (keys['KeyE']) camAngle -= 0.01;
+    if (keys['Digit1']) setStyle('classic');
+    if (keys['Digit2']) setStyle('neon');
+    if (keys['Digit3']) setStyle('cyber');
+    if (keys['Digit4']) setStyle('sunset');
+
+    updateCamera();
+}
+
+// ---- LOADING ----
+function hideLoading() {
+    const el = document.getElementById('loading');
+    el.style.opacity = '0';
+    setTimeout(() => el.style.display = 'none', 800);
+    document.getElementById('best-display').textContent = bestScore;
+    // Aplicar estilo inicial
+    setStyle('classic');
+}
+
+// ---- RESIZE ----
+function onResize() {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+}
+
+// ---- MÚSICA PROCEDURAL ----
+const Music = (() => {
+    let ctx, masterGain, playing = false, nextBeat = 0, beatIdx = 0;
+    const BPM = 132, STEP = 60 / BPM / 2; // 8th notes
+
+    // Notas en Hz — escala pentatónica de A menor
+    const NOTES = [220, 246.94, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88, 523.25];
+    // Melodía (índices en NOTES, -1 = silencio)
+    const MELODY = [0,−1,2,−1,4,3,2,−1, 0,−1,5,−1,4,−1,2,−1,
+                    7,−1,5,−1,4,3,2,−1, 0,−1,2,4,5,4,2,−1];
+    // Bajo (índices)
+    const BASS   = [0,−1,0,−1,0,−1,5,−1, 0,−1,0,−1,0,5,0,−1,
+                    3,−1,3,−1,3,−1,2,−1, 0,−1,0,−1,0,−1,0,−1];
+    // Kick pattern (1 = hit)
+    const KICK   = [1,0,0,0,1,0,0,0, 1,0,0,0,1,0,0,0,
+                    1,0,0,0,1,0,0,0, 1,0,0,0,1,0,1,0];
+    // HiHat
+    const HIHAT  = [1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,
+                    1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1];
+
+    function note(freq, start, dur, type='square', vol=0.18, detune=0) {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = type; o.frequency.value = freq; o.detune.value = detune;
+        g.gain.setValueAtTime(0, start);
+        g.gain.linearRampToValueAtTime(vol, start + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        o.connect(g); g.connect(masterGain);
+        o.start(start); o.stop(start + dur + 0.05);
+    }
+
+    function kick(t) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.setValueAtTime(150, t);
+        o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+        g.gain.setValueAtTime(1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        o.connect(g); g.connect(masterGain);
+        o.start(t); o.stop(t + 0.2);
+    }
+
+    function hihat(t) {
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        const s = ctx.createBufferSource(), g = ctx.createGain();
+        const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
+        g.gain.setValueAtTime(0.08, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        s.buffer = buf; s.connect(f); f.connect(g); g.connect(masterGain);
+        s.start(t); s.stop(t + 0.06);
+    }
+
+    function scheduleBeat() {
+        while (nextBeat < ctx.currentTime + 0.2) {
+            const i = beatIdx % MELODY.length;
+            const t = nextBeat;
+            if (KICK[i])  kick(t);
+            if (HIHAT[i]) hihat(t);
+            if (MELODY[i] >= 0) note(NOTES[MELODY[i]], t, STEP * 1.5, 'square', 0.12);
+            if (BASS[i]   >= 0) note(NOTES[BASS[i]] / 2, t, STEP * 1.8, 'sawtooth', 0.15, -5);
+            nextBeat += STEP;
+            beatIdx++;
+        }
+    }
+
+    let scheduler;
+    return {
+        start() {
+            if (playing) return;
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = ctx.createGain();
+            masterGain.gain.value = 0.4;
+            masterGain.connect(ctx.destination);
+            nextBeat = ctx.currentTime + 0.1;
+            beatIdx = 0; playing = true;
+            scheduler = setInterval(scheduleBeat, 50);
+        },
+        stop() {
+            if (!playing) return;
+            clearInterval(scheduler);
+            masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+            setTimeout(() => { ctx.close(); playing = false; }, 400);
+        },
+        setVol(v) { if (masterGain) masterGain.gain.value = v; }
+    };
+})();
+
+// ---- LOOP ----
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.1); // segundos, cap a 100ms
+    lastTime = now;
+
+    handleInput();
+    if (currentStyle !== 'classic') updateRain();
+    if (!window._freezeCar) updatePizzaCar();
+    updateOrders(dt);
+    updateNavArrow();
+    updateDestBeacon(dt);
+    updateGroundPath();
+    const isTurbo = keys['ShiftLeft'] || keys['ShiftRight'];
+    updateSmoke(dt, isTurbo);
+    updateHazard(dt);
+    if (controlLocked) { controlLockTimer -= dt; if (controlLockTimer <= 0) controlLocked = false; }
+    composer.render();
+}
+
+let _muted = false;
+function toggleMute() {
+    _muted = !_muted;
+    Music.setVol(_muted ? 0 : 0.4);
+    document.getElementById('mute-btn').textContent = _muted ? '🔇' : '🔊';
+}
+
+// ---- JOYSTICK MOBILE ----
+(function() {
+    const zone = document.getElementById('joystick-base');
+    const knob = document.getElementById('joystick-knob');
+    const R = 65; // radio máximo del knob
+    let touchId = null, cx = 0, cy = 0;
+
+    function setKeys(dx, dy) {
+        // dx: -1 izq, +1 der | dy: -1 adelante (arriba), +1 atrás
+        const deadzone = 0.25;
+        keys['KeyW'] = dy < -deadzone;
+        keys['KeyS'] = dy >  deadzone;
+        keys['KeyA'] = dx < -deadzone;
+        keys['KeyD'] = dx >  deadzone;
+    }
+
+    zone.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        touchId = t.identifier;
+        const rect = zone.getBoundingClientRect();
+        cx = rect.left + rect.width / 2;
+        cy = rect.top  + rect.height / 2;
+    }, { passive: false });
+
+    zone.addEventListener('touchmove', e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier !== touchId) continue;
+            let dx = t.clientX - cx;
+            let dy = t.clientY - cy;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > R) { dx = dx/dist*R; dy = dy/dist*R; }
+            knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            setKeys(dx/R, dy/R);
+        }
+    }, { passive: false });
+
+    const endTouch = e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier !== touchId) continue;
+            touchId = null;
+            knob.style.transform = 'translate(-50%,-50%)';
+            setKeys(0, 0);
+        }
+    };
+    zone.addEventListener('touchend', endTouch, { passive: false });
+    zone.addEventListener('touchcancel', endTouch, { passive: false });
+})();
+
+// Prevent scroll on mobile
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+init();
+
+// Teclas numéricas para estilos
+window.addEventListener('keydown', e => {
+    if (e.key === '1') setStyle('classic');
+    if (e.key === '2') setStyle('neon');
+    if (e.key === '3') setStyle('cyber');
+    if (e.key === '4') setStyle('sunset');
+    if (e.key === 'c' || e.key === 'C') {
+        carFollowCam = !carFollowCam;
+        // Al volver a follow, resetear target al auto
+        if (carFollowCam && pizzaCar) camTarget.set(pizzaCar.position.x, 0, pizzaCar.position.z);
+    }
+});
+</script>
+</body>
+</html>
